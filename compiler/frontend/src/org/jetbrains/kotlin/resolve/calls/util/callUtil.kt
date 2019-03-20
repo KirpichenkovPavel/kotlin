@@ -19,6 +19,8 @@ package org.jetbrains.kotlin.resolve.calls.callUtil
 import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.incremental.KotlinLookupLocation
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.psiUtil.getTextWithLocation
 import org.jetbrains.kotlin.resolve.BindingContext
@@ -28,6 +30,8 @@ import org.jetbrains.kotlin.resolve.calls.ArgumentTypeResolver
 import org.jetbrains.kotlin.resolve.calls.CallTransformer
 import org.jetbrains.kotlin.resolve.calls.context.ResolutionContext
 import org.jetbrains.kotlin.resolve.calls.model.*
+import org.jetbrains.kotlin.resolve.calls.tasks.ExplicitReceiverKind
+import org.jetbrains.kotlin.resolve.constants.KClassValue
 import org.jetbrains.kotlin.resolve.scopes.receivers.ExpressionReceiver
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.isError
@@ -70,6 +74,20 @@ fun <D : CallableDescriptor> ResolvedCall<D>.usesDefaultArguments(): Boolean {
     return valueArgumentsByIndex?.any { it is DefaultValueArgument } ?: false
 }
 
+fun ResolvedCall<*>.getVariadicTypeArgsFromDispatchReceiver(): List<KotlinType>? {
+    val result: MutableList<KotlinType> = emptyList().toMutableList()
+    if (explicitReceiverKind == ExplicitReceiverKind.DISPATCH_RECEIVER) {
+        val dispatchReceiverType = dispatchReceiver?.type ?: return null
+        val typeArgsAnnotation = dispatchReceiverType.annotations.findAnnotation(
+            FqName("kotlin.experimental.TypeArguments")
+        )
+            ?: return null
+        val typesList = typeArgsAnnotation.allValueArguments[Name.identifier("types")]?.value.safeAs<ArrayList<KClassValue>>()
+            ?: return null
+        typesList.mapTo(result) { type -> type.value }
+    }
+    return result.toList()
+}
 
 // call
 

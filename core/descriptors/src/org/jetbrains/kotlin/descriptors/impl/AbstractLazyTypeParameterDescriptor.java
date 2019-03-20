@@ -32,11 +32,12 @@ public abstract class AbstractLazyTypeParameterDescriptor extends AbstractTypePa
             @NotNull Name name,
             @NotNull Variance variance,
             boolean isReified,
+            boolean isVariadic,
             int index,
             @NotNull SourceElement source,
             @NotNull SupertypeLoopChecker supertypeLoopChecker
     ) {
-        super(storageManager, containingDeclaration, Annotations.Companion.getEMPTY() /* TODO */, name, variance, isReified, index, source,
+        super(storageManager, containingDeclaration, Annotations.Companion.getEMPTY() /* TODO */, name, variance, isReified, isVariadic, index, source,
               supertypeLoopChecker);
     }
 
@@ -44,10 +45,11 @@ public abstract class AbstractLazyTypeParameterDescriptor extends AbstractTypePa
     public String toString() {
         // Not using descriptor renderer to preserve laziness
         return String.format(
-                "%s%s%s",
+                "%s%s%s%s",
                 isReified() ? "reified " : "",
                 getVariance() == Variance.INVARIANT ? "" : getVariance() + " ",
-                getName()
+                getName(),
+                isVariadic() ? "..." : ""
         );
     }
 }

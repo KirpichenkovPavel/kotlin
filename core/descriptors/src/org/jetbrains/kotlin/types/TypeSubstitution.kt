@@ -87,7 +87,8 @@ class IndexedParametersSubstitution(
     private val approximateCapturedTypes: Boolean = false
 ) : TypeSubstitution() {
     init {
-        assert(parameters.size <= arguments.size) {
+        val lastIsVariadic = parameters.lastOrNull()?.isVariadic ?: false
+        assert(parameters.size <= arguments.size || lastIsVariadic && parameters.size - 1 <= arguments.size) {
             "Number of arguments should not be less then number of parameters, but: parameters=${parameters.size}, args=${arguments.size}"
         }
     }

@@ -71,6 +71,7 @@ fun CallableMemberDescriptor.createTypeParameterWithNewName(
         this,
         descriptor.annotations,
         descriptor.isReified,
+        descriptor.isVariadic,
         descriptor.variance,
         Name.identifier(newName),
         descriptor.index,

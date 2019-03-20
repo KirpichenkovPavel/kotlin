@@ -445,20 +445,27 @@ class TypeResolver(
                 collectArgumentsForClassifierTypeConstructor(c, classDescriptor, qualifierResolutionResult.qualifierParts)
                         ?: return createErrorTypeForTypeConstructor(c, projectionFromAllQualifierParts, typeConstructor)
 
-        assert(collectedArgumentAsTypeProjections.size <= parameters.size) {
+        val isVariadic = parameters.lastOrNull()?.isVariadic ?: false
+        assert(collectedArgumentAsTypeProjections.size <= parameters.size || isVariadic) {
             "Collected arguments count should be not greater then parameters count," +
                     " but ${collectedArgumentAsTypeProjections.size} instead of ${parameters.size} found in ${element.text}"
         }
 
         val argumentsFromUserType = resolveTypeProjections(c, typeConstructor, collectedArgumentAsTypeProjections)
-        val arguments = buildFinalArgumentList(argumentsFromUserType, argumentsForOuterClass, parameters)
+        val (argumentsWithReplacedVariadics, typeArgumentsAnnotation) = replaceVariadicTypeArgumentsWithUpperBoundAndGenerateAnnotation(
+            parameters, argumentsFromUserType
+        )
+        val arguments = buildFinalArgumentList(argumentsWithReplacedVariadics, argumentsForOuterClass, parameters)
+        val updatedAnnotations = if (typeArgumentsAnnotation != null)
+            composeAnnotations(annotations, Annotations.create(listOf(typeArgumentsAnnotation)))
+        else annotations
 
         assert(arguments.size == parameters.size) {
             "Collected arguments count should be equal to parameters count," +
                     " but ${collectedArgumentAsTypeProjections.size} instead of ${parameters.size} found in ${element.text}"
         }
 
-        val resultingType = KotlinTypeFactory.simpleNotNullType(annotations, classDescriptor, arguments)
+        val resultingType = KotlinTypeFactory.simpleNotNullType(updatedAnnotations, classDescriptor, arguments)
 
         // We create flexible types by convention here
         // This is not intended to be used in normal users' environments, only for tests and debugger etc
@@ -468,12 +475,14 @@ class TypeResolver(
             val substitutor = TypeSubstitutor.create(resultingType)
             for (i in parameters.indices) {
                 val parameter = parameters[i]
-                val argument = arguments[i].type
+                if (!parameter.isVariadic) {
+                    val argument = arguments[i].type
 
-                val typeReference = collectedArgumentAsTypeProjections.getOrNull(i)?.typeReference
+                    val typeReference = collectedArgumentAsTypeProjections.getOrNull(i)?.typeReference
 
-                if (typeReference != null) {
-                    DescriptorResolver.checkBounds(typeReference, argument, parameter, substitutor, c.trace)
+                    if (typeReference != null) {
+                        DescriptorResolver.checkBounds(typeReference, argument, parameter, substitutor, c.trace)
+                    }
                 }
             }
         }
@@ -719,7 +728,17 @@ class TypeResolver(
                 return null
             }
 
-            if (currentArguments.size != currentParameters.size) {
+            val lastParameterIsVariadic = currentParameters.lastOrNull()?.isVariadic ?: false
+            if (!lastParameterIsVariadic && currentArguments.size != currentParameters.size) {
+                c.trace.report(
+                    WRONG_NUMBER_OF_TYPE_ARGUMENTS.on(
+                        qualifierPart.typeArguments ?: qualifierPart.expression,
+                        currentParameters.size, classifierDescriptorChain[index]
+                    )
+                )
+                return null
+            }
+            if (lastParameterIsVariadic && currentArguments.size < currentParameters.size - 1) {
                 c.trace.report(
                     WRONG_NUMBER_OF_TYPE_ARGUMENTS.on(
                         qualifierPart.typeArguments ?: qualifierPart.expression,
@@ -759,7 +778,11 @@ class TypeResolver(
             val restParameters = parameters.subList(result.size, parameters.size)
 
             val typeArgumentsCanBeSpecifiedCount =
-                classifierDescriptor.classifierDescriptorsFromInnerToOuter().sumBy { it.declaredTypeParameters.size }
+                classifierDescriptor.classifierDescriptorsFromInnerToOuter().sumBy {
+                    it.declaredTypeParameters.filter {
+                        !it.isVariadic
+                    }.size
+                }
 
             if (restArguments == null && typeArgumentsCanBeSpecifiedCount > result.size) {
                 c.trace.report(
@@ -796,6 +819,23 @@ class TypeResolver(
         argumentElements: List<KtTypeProjection>,
         message: String = "Error type for resolving type projections"
     ) = resolveTypeProjections(c, ErrorUtils.createErrorTypeConstructor(message), argumentElements)
+
+    private fun replaceVariadicTypeArgumentsWithUpperBoundAndGenerateAnnotation(
+        typeParameters: List<TypeParameterDescriptor>,
+        typeArguments: List<TypeProjection>
+    ): Pair<List<TypeProjection>, AnnotationDescriptor?> {
+        if (typeParameters.lastOrNull()?.isVariadic == true) {
+            val variadicProjections = if (typeArguments.size >= typeParameters.size)
+                typeArguments.subList(typeParameters.lastIndex, typeArguments.size)
+            else emptyList()
+            val typeArgumentsAnnotation = generateTypeArgumentsAnnotation(moduleDescriptor, variadicProjections.map { it.type.unwrap() })
+            val replacedProjections = typeArguments.subList(0, typeParameters.lastIndex) + TypeProjectionImpl(
+                typeParameters.last().upperBounds.singleOrNull() ?: moduleDescriptor.builtIns.nullableAnyType
+            )
+            return Pair(replacedProjections, typeArgumentsAnnotation)
+        }
+        return Pair(typeArguments, null)
+    }
 
     /**
      * For cases like:

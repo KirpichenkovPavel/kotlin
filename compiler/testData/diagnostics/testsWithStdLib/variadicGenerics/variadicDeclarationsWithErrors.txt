@@ -1,0 +1,22 @@
+package
+
+public final class Correct</*0*/ T1, /*1*/ T2, /*2*/ Ts> {
+    public constructor Correct</*0*/ T1, /*1*/ T2, /*2*/ Ts>()
+    public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+}
+
+public final class MultipleVariadicDeclarations</*0*/ Ts1, /*1*/ T, /*2*/ Ts2, /*3*/ Ts3> {
+    public constructor MultipleVariadicDeclarations</*0*/ Ts1, /*1*/ T, /*2*/ Ts2, /*3*/ Ts3>()
+    public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+}
+
+public final class VariadicIsNotLast</*0*/ Ts, /*1*/ T> {
+    public constructor VariadicIsNotLast</*0*/ Ts, /*1*/ T>()
+    public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+}

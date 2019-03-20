@@ -5,9 +5,19 @@
 
 package org.jetbrains.kotlin.resolve
 
-import org.jetbrains.kotlin.descriptors.CallableMemberDescriptor
-import org.jetbrains.kotlin.descriptors.PropertyDescriptor
+import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
+import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptorImpl
+import org.jetbrains.kotlin.descriptors.annotations.Annotations
+import org.jetbrains.kotlin.incremental.components.NoLookupLocation
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.resolve.constants.ConstantValueFactory
+import org.jetbrains.kotlin.resolve.constants.KClassValue
 import org.jetbrains.kotlin.resolve.source.KotlinSourceElement
+import org.jetbrains.kotlin.types.KotlinTypeFactory
+import org.jetbrains.kotlin.types.TypeProjectionImpl
+import org.jetbrains.kotlin.types.UnwrappedType
 
 fun PropertyDescriptor.hasBackingField(bindingContext: BindingContext?): Boolean = when {
     kind == CallableMemberDescriptor.Kind.FAKE_OVERRIDE -> overriddenDescriptors.any { it.hasBackingField(bindingContext) }
@@ -15,4 +25,38 @@ fun PropertyDescriptor.hasBackingField(bindingContext: BindingContext?): Boolean
     compileTimeInitializer != null -> true
     getter != null -> false
     else -> true
+}
+
+fun generateTypeArgumentsAnnotation(
+    moduleDescriptor: ModuleDescriptor,
+    types: List<UnwrappedType>
+): AnnotationDescriptor? {
+    val annotationClass = moduleDescriptor.resolveClassByFqName(
+        FqName("kotlin.experimental.TypeArguments"),
+        NoLookupLocation.WHEN_RESOLVING_DEFAULT_TYPE_ARGUMENTS
+    )
+    val kClassDescriptor = moduleDescriptor.resolveClassByFqName(
+        FqName("kotlin.reflect.KClass"),
+        NoLookupLocation.WHEN_RESOLVING_DEFAULT_TYPE_ARGUMENTS
+    ) ?: return null
+    val typeConstructor = annotationClass?.defaultType?.constructor ?: return null
+    val annotationArgName = Name.identifier("types")
+    val constValForTypesArray = ConstantValueFactory.createArrayValue(
+        types.map {
+            val arguments = listOf(TypeProjectionImpl(it))
+            val type = KotlinTypeFactory.simpleNotNullType(Annotations.EMPTY, kClassDescriptor, arguments)
+            KClassValue(type)
+        },
+        kClassDescriptor.defaultType
+    )
+    return AnnotationDescriptorImpl(
+        KotlinTypeFactory.simpleType(
+            Annotations.EMPTY,
+            typeConstructor,
+            emptyList(),
+            false
+        ),
+        mapOf(annotationArgName to constValForTypesArray),
+        SourceElement.NO_SOURCE
+    )
 }

@@ -131,6 +131,7 @@ public interface KtTokens {
     KtKeywordToken NOT_IS      = KtKeywordToken.keyword("NOT_IS", "!is");
     KtSingleValueToken HASH        = new KtSingleValueToken("HASH", "#");
     KtSingleValueToken AT          = new KtSingleValueToken("AT", "@");
+    KtSingleValueToken ELLIPSIS    = new KtSingleValueToken("ELLIPSIS", "...");
 
     KtSingleValueToken COMMA       = new KtSingleValueToken("COMMA", ",");
 

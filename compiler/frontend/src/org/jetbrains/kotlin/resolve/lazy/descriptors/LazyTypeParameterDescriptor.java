@@ -51,6 +51,7 @@ public class LazyTypeParameterDescriptor extends AbstractLazyTypeParameterDescri
                 typeParameter.getNameAsSafeName(),
                 typeParameter.getVariance(),
                 typeParameter.hasModifier(KtTokens.REIFIED_KEYWORD),
+                typeParameter.isVariadic(),
                 index,
                 KotlinSourceElementKt.toSourceElement(typeParameter),
                 c.getSupertypeLoopChecker());

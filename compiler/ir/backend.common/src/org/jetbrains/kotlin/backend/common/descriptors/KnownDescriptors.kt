@@ -97,7 +97,7 @@ open class KnownClassDescriptor(
                 createClassWithTypeParameters(name, containingDeclaration, supertypes, modality, visibility, annotations) { classDescriptor ->
                     typeParameterNames.mapIndexed { index, name ->
                         TypeParameterDescriptorImpl.createWithDefaultBound(
-                                classDescriptor, Annotations.EMPTY, true, Variance.INVARIANT, name, index
+                                classDescriptor, Annotations.EMPTY, true, false, Variance.INVARIANT, name, index
                         )
                     }
                 }

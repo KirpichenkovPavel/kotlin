@@ -265,7 +265,8 @@ class TypeClsStubBuilder(private val c: ClsStubBuilderContext) {
                     typeParameterListStub,
                     name = name.ref(),
                     isInVariance = proto.variance == Variance.IN,
-                    isOutVariance = proto.variance == Variance.OUT
+                    isOutVariance = proto.variance == Variance.OUT,
+                    isVariadic = false
             )
             createTypeParameterModifierListStub(typeParameterStub, proto)
             val upperBoundProtos = proto.upperBounds(c.typeTable)

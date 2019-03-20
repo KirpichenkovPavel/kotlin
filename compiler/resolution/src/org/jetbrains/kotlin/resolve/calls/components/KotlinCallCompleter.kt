@@ -5,16 +5,24 @@
 
 package org.jetbrains.kotlin.resolve.calls.components
 
+import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
+import org.jetbrains.kotlin.name.FqName
+import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.calls.inference.NewConstraintSystem
 import org.jetbrains.kotlin.resolve.calls.inference.components.KotlinConstraintSystemCompleter
 import org.jetbrains.kotlin.resolve.calls.inference.components.KotlinConstraintSystemCompleter.ConstraintSystemCompletionMode
 import org.jetbrains.kotlin.resolve.calls.inference.model.ConstraintStorage.Empty.hasContradiction
 import org.jetbrains.kotlin.resolve.calls.inference.model.ExpectedTypeConstraintPosition
+import org.jetbrains.kotlin.resolve.calls.inference.model.VariadicTypeParameterConstraintPosition
 import org.jetbrains.kotlin.resolve.calls.model.*
 import org.jetbrains.kotlin.resolve.calls.tower.forceResolution
+import org.jetbrains.kotlin.resolve.constants.IntegerValueTypeConstructor
+import org.jetbrains.kotlin.resolve.constants.KClassValue
 import org.jetbrains.kotlin.types.ErrorUtils
+import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.TypeUtils
 import org.jetbrains.kotlin.types.UnwrappedType
+import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 
 class KotlinCallCompleter(
     private val postponedArgumentsAnalyzer: PostponedArgumentsAnalyzer,
@@ -127,6 +135,7 @@ class KotlinCallCompleter(
         expectedType: UnwrappedType?,
         resolutionCallbacks: KotlinResolutionCallbacks
     ): ConstraintSystemCompletionMode {
+        addConstraintsForVariadicGenerics()
         if (expectedType != null && TypeUtils.noExpectedType(expectedType)) return ConstraintSystemCompletionMode.FULL
 
         val returnType = resolvedCall.candidateDescriptor.returnType?.unwrap() ?: return ConstraintSystemCompletionMode.PARTIAL
@@ -141,7 +150,6 @@ class KotlinCallCompleter(
         } else {
             substitutedType = resolvedCall.substitutor.substituteKeepAnnotations(returnType)
         }
-
         return if (expectedType != null || csBuilder.isProperType(substitutedType))
             ConstraintSystemCompletionMode.FULL
         else
@@ -154,6 +162,47 @@ class KotlinCallCompleter(
     ): UnwrappedType {
         if (resolvedCall.atom.callKind != KotlinCallKind.VARIABLE) return returnType
         return resolutionCallbacks.createReceiverWithSmartCastInfo(resolvedCall)?.stableType ?: returnType
+    }
+
+    private fun KotlinResolutionCandidate.addConstraintsForVariadicGenerics() {
+        for ((parameter, argument) in typeIndexesFromResolvedCall()) {
+            val typeIndexAnnotation = parameter.type.annotations.findAnnotation(FqName("kotlin.experimental.TypeIndex"))!!
+            val type = typeIndexAnnotation.allValueArguments.getValue(Name.identifier("targetType")).value.safeAs<KotlinType>()
+                ?: continue
+            val typeVariableForAdditionalConstraint = resolvedCall.substitutor.freshVariables.first { typeVariable ->
+                // todo: have to compare types properly, but TypeUtils.typesEqual does not help because of different typeConstructor instances
+                typeVariable.originalTypeParameter.defaultType.unwrap().constructor.declarationDescriptor?.name ==
+                        type.unwrap().constructor.declarationDescriptor?.name
+            } ?: continue
+            val passedTypeIndexConstant = typeIndexArgumentIntegerValue(argument) ?: continue
+            val typeFromAnnotation = getTypeFromReceiverAnnotation(passedTypeIndexConstant) ?: continue
+            csBuilder.addEqualityConstraint(
+                typeVariableForAdditionalConstraint.defaultType,
+                typeFromAnnotation.unwrap(),
+                VariadicTypeParameterConstraintPosition()
+            )
+        }
+    }
+
+    private fun KotlinResolutionCandidate.typeIndexesFromResolvedCall() =
+        resolvedCall.argumentMappingByOriginal.entries.filter { parameterToArgument ->
+            parameterToArgument.key.type.annotations.hasAnnotation(
+                FqName("kotlin.experimental.TypeIndex")
+            )
+        }
+
+    private fun typeIndexArgumentIntegerValue(argument: ResolvedCallArgument): Int? =
+        argument.arguments.firstOrNull().safeAs<ExpressionKotlinCallArgument>()?.receiver?.receiverValue?.type?.constructor
+            ?.safeAs<IntegerValueTypeConstructor>()?.getValue()?.toInt()
+
+    private fun KotlinResolutionCandidate.getTypeArgumentsAnnotationFromReceiver(): AnnotationDescriptor? =
+        resolvedCall.dispatchReceiverArgument?.receiver?.receiverValue?.type?.annotations
+            ?.findAnnotation(FqName("kotlin.experimental.TypeArguments"))
+
+    private fun KotlinResolutionCandidate.getTypeFromReceiverAnnotation(indexValueArgument: Int): KotlinType? {
+        val typeArgsAnnotation = getTypeArgumentsAnnotationFromReceiver() ?: return null
+        val typesArray = typeArgsAnnotation.allValueArguments.get(Name.identifier("types"))?.value
+        return typesArray.safeAs<ArrayList<KClassValue>>()?.getOrNull(indexValueArgument)?.value
     }
 
     fun KotlinResolutionCandidate.asCallResolutionResult(

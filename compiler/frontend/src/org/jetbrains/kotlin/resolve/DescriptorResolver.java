@@ -460,6 +460,7 @@ public class DescriptorResolver {
                 containingDescriptor,
                 annotations,
                 typeParameter.hasModifier(KtTokens.REIFIED_KEYWORD),
+                typeParameter.isVariadic(),
                 typeParameter.getVariance(),
                 KtPsiUtil.safeName(typeParameter.getName()),
                 index,

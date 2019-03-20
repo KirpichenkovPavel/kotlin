@@ -107,6 +107,7 @@ class ToArrayLowering(private val context: JvmBackendContext) : ClassLoweringPas
                 toArrayDescriptor,
                 Annotations.EMPTY,
                 false,
+                false,
                 Variance.INVARIANT,
                 Name.identifier("T"),
                 0

@@ -73,6 +73,10 @@ class CoroutinePosition() : ConstraintPosition() {
     override fun toString(): String = "for coroutine call"
 }
 
+class VariadicTypeParameterConstraintPosition : ConstraintPosition() {
+    override fun toString(): String = "Variadic type parameter constraint"
+}
+
 @Deprecated("Should be used only in SimpleConstraintSystemImpl")
 object SimpleConstraintSystemConstraintPosition : ConstraintPosition()
 

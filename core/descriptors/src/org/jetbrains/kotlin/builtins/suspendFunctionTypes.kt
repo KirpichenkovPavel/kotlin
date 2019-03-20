@@ -32,7 +32,7 @@ val FAKE_CONTINUATION_CLASS_DESCRIPTOR_EXPERIMENTAL =
         visibility = Visibilities.PUBLIC
         setTypeParameterDescriptors(
             TypeParameterDescriptorImpl.createWithDefaultBound(
-                this, Annotations.EMPTY, false, Variance.IN_VARIANCE, Name.identifier("T"), 0
+                this, Annotations.EMPTY, false, false, Variance.IN_VARIANCE, Name.identifier("T"), 0
             ).let(::listOf)
         )
         createTypeConstructor()
@@ -48,7 +48,7 @@ val FAKE_CONTINUATION_CLASS_DESCRIPTOR_RELEASE =
         visibility = Visibilities.PUBLIC
         setTypeParameterDescriptors(
             TypeParameterDescriptorImpl.createWithDefaultBound(
-                this, Annotations.EMPTY, false, Variance.IN_VARIANCE, Name.identifier("T"), 0
+                this, Annotations.EMPTY, false, false, Variance.IN_VARIANCE, Name.identifier("T"), 0
             ).let(::listOf)
         )
         createTypeConstructor()

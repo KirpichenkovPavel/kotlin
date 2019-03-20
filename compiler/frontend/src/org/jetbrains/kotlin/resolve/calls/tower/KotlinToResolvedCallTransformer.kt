@@ -7,6 +7,8 @@ package org.jetbrains.kotlin.resolve.calls.tower
 
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.annotations.Annotations
+import org.jetbrains.kotlin.descriptors.annotations.composeAnnotations
 import org.jetbrains.kotlin.diagnostics.Diagnostic
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.psi.*
@@ -23,6 +25,7 @@ import org.jetbrains.kotlin.resolve.calls.components.isVararg
 import org.jetbrains.kotlin.resolve.calls.context.BasicCallResolutionContext
 import org.jetbrains.kotlin.resolve.calls.context.CallPosition
 import org.jetbrains.kotlin.resolve.calls.inference.buildResultingSubstitutor
+import org.jetbrains.kotlin.resolve.calls.inference.components.DelegatingNewTypeSubstitutor
 import org.jetbrains.kotlin.resolve.calls.inference.components.FreshVariableNewTypeSubstitutor
 import org.jetbrains.kotlin.resolve.calls.inference.components.NewTypeSubstitutor
 import org.jetbrains.kotlin.resolve.calls.inference.components.NewTypeSubstitutorByConstructorMap
@@ -182,6 +185,26 @@ class KotlinToResolvedCallTransformer(
             }
         }
         return NewResolvedCallImpl(completedSimpleAtom, resultSubstitutor, diagnostics)
+    }
+
+    fun getResultSubstitutor(resolvedCall: ResolvedCallAtom, typeSubstitutor: NewTypeSubstitutor): NewTypeSubstitutor {
+        val classConstructorDescriptor = resolvedCall.candidateDescriptor.safeAs<ClassConstructorDescriptor>()
+        val variadicTypeParameter = classConstructorDescriptor?.typeParameters?.firstOrNull { it.isVariadic } ?: return typeSubstitutor
+        val mappedTypes = resolvedCall.typeArgumentMappingByOriginal.getTypeArguments(variadicTypeParameter)
+        if (mappedTypes.any { it !is SimpleTypeArgument }) return typeSubstitutor
+        val extractedTypes = mappedTypes.mapNotNull { it.safeAs<SimpleTypeArgument>()?.type }
+        val syntheticAnnotation = generateTypeArgumentsAnnotation(moduleDescriptor, extractedTypes) ?: return typeSubstitutor
+        return object : DelegatingNewTypeSubstitutor(typeSubstitutor) {
+            override fun safeSubstitute(type: UnwrappedType): UnwrappedType =
+                super.safeSubstitute(type).replaceAnnotations(Annotations.create(listOf(syntheticAnnotation)))
+
+            override fun substituteKeepAnnotations(type: UnwrappedType): UnwrappedType {
+                val originalSubstitutedType = super.substituteKeepAnnotations(type)
+                return originalSubstitutedType.replaceAnnotations(
+                    composeAnnotations(originalSubstitutedType.annotations, Annotations.create(listOf(syntheticAnnotation)))
+                )
+            }
+        }
     }
 
     fun runCallCheckers(resolvedCall: ResolvedCall<*>, callCheckerContext: CallCheckerContext) {
@@ -546,6 +569,7 @@ class NewResolvedCallImpl<D : CallableDescriptor>(
     override fun getExplicitReceiverKind(): ExplicitReceiverKind = resolvedCallAtom.explicitReceiverKind
 
     override fun getTypeArguments(): Map<TypeParameterDescriptor, KotlinType> {
+        // todo: how to properly convert 1-to-1 map into 1-to-N map for variadic type arguments without breaking everything?
         val typeParameters = candidateDescriptor.typeParameters.takeIf { it.isNotEmpty() } ?: return emptyMap()
         return typeParameters.zip(typeArguments).toMap()
     }

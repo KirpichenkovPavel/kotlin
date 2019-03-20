@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
+ * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
  * that can be found in the license/LICENSE.txt file.
  */
 
@@ -3247,6 +3247,94 @@ public class DiagnosticsTestWithStdLibGenerated extends AbstractDiagnosticsTestW
         @TestMetadata("kt5534.kt")
         public void testKt5534() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/varargs/kt5534.kt");
+        }
+    }
+
+    @TestMetadata("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class VariadicGenerics extends AbstractDiagnosticsTestWithStdLib {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, TargetBackend.ANY, testDataFilePath);
+        }
+
+        public void testAllFilesPresentInVariadicGenerics() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.ANY, true);
+        }
+
+        @TestMetadata("completeTypeDeclarations.kt")
+        public void testCompleteTypeDeclarations() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/completeTypeDeclarations.kt");
+        }
+
+        @TestMetadata("emptyTuple.kt")
+        public void testEmptyTuple() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/emptyTuple.kt");
+        }
+
+        @TestMetadata("genericTypeForVariadicGenericClass.kt")
+        public void testGenericTypeForVariadicGenericClass() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/genericTypeForVariadicGenericClass.kt");
+        }
+
+        @TestMetadata("inferTypeFromTuple.kt")
+        public void testInferTypeFromTuple() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/inferTypeFromTuple.kt");
+        }
+
+        @TestMetadata("mixedTypeArguments.kt")
+        public void testMixedTypeArguments() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/mixedTypeArguments.kt");
+        }
+
+        @TestMetadata("spreadOperatorInTupleConstructor.kt")
+        public void testSpreadOperatorInTupleConstructor() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/spreadOperatorInTupleConstructor.kt");
+        }
+
+        @TestMetadata("tupleWithOperatorGet.kt")
+        public void testTupleWithOperatorGet() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/tupleWithOperatorGet.kt");
+        }
+
+        @TestMetadata("tupleWithUserTypes.kt")
+        public void testTupleWithUserTypes() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/tupleWithUserTypes.kt");
+        }
+
+        @TestMetadata("tupleWrongIndex.kt")
+        public void testTupleWrongIndex() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/tupleWrongIndex.kt");
+        }
+
+        @TestMetadata("typeCastForVariadicClasses.kt")
+        public void testTypeCastForVariadicClasses() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/typeCastForVariadicClasses.kt");
+        }
+
+        @TestMetadata("typeMismatch.kt")
+        public void testTypeMismatch() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/typeMismatch.kt");
+        }
+
+        @TestMetadata("variablesInTupleConstructor.kt")
+        public void testVariablesInTupleConstructor() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variablesInTupleConstructor.kt");
+        }
+
+        @TestMetadata("variadicClassAsReturnType.kt")
+        public void testVariadicClassAsReturnType() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variadicClassAsReturnType.kt");
+        }
+
+        @TestMetadata("variadicDeclarationsWithErrors.kt")
+        public void testVariadicDeclarationsWithErrors() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variadicDeclarationsWithErrors.kt");
+        }
+
+        @TestMetadata("variadicReceiverAsTopLevelConstant.kt")
+        public void testVariadicReceiverAsTopLevelConstant() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variadicReceiverAsTopLevelConstant.kt");
         }
     }
 

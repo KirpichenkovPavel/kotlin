@@ -1,0 +1,36 @@
+package
+
+public fun test(): kotlin.Unit
+
+public final data class MyClass1 {
+    public constructor MyClass1(/*0*/ first: kotlin.Int, /*1*/ second: kotlin.String)
+    public final val first: kotlin.Int
+    public final val second: kotlin.String
+    public final operator /*synthesized*/ fun component1(): kotlin.Int
+    public final operator /*synthesized*/ fun component2(): kotlin.String
+    public final /*synthesized*/ fun copy(/*0*/ first: kotlin.Int = ..., /*1*/ second: kotlin.String = ...): MyClass1
+    public open override /*1*/ /*synthesized*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public open override /*1*/ /*synthesized*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*synthesized*/ fun toString(): kotlin.String
+}
+
+public final data class MyClass2 {
+    public constructor MyClass2(/*0*/ first: kotlin.collections.List<kotlin.Int>, /*1*/ second: kotlin.collections.List<MyClass1>)
+    public final val first: kotlin.collections.List<kotlin.Int>
+    public final val second: kotlin.collections.List<MyClass1>
+    public final operator /*synthesized*/ fun component1(): kotlin.collections.List<kotlin.Int>
+    public final operator /*synthesized*/ fun component2(): kotlin.collections.List<MyClass1>
+    public final /*synthesized*/ fun copy(/*0*/ first: kotlin.collections.List<kotlin.Int> = ..., /*1*/ second: kotlin.collections.List<MyClass1> = ...): MyClass2
+    public open override /*1*/ /*synthesized*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public open override /*1*/ /*synthesized*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*synthesized*/ fun toString(): kotlin.String
+}
+
+public final class Tuple</*0*/ Ts> {
+    public constructor Tuple</*0*/ Ts>(/*0*/ vararg values: Ts /*kotlin.Array<out Ts>*/)
+    public final val values: kotlin.Array<out Ts>
+    public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public final fun </*0*/ T> get(/*0*/ ix: @kotlin.experimental.TypeIndex(targetType = T::class, variadicParameter = Ts::class) kotlin.Int): T
+    public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+}

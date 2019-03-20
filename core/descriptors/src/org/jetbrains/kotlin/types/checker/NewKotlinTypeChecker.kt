@@ -368,6 +368,7 @@ object NewKotlinTypeChecker : KotlinTypeChecker {
         val parameters = superType.constructor.parameters
 
         for (index in parameters.indices) {
+            if (parameters[index].isVariadic) continue // todo proper handling
             val superProjection = superType.arguments[index] // todo error index
             if (superProjection.isStarProjection) continue // A<B> <: A<*>
 

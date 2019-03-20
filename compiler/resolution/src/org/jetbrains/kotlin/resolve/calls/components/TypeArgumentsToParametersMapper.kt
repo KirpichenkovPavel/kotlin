@@ -20,24 +20,25 @@ import org.jetbrains.kotlin.descriptors.CallableDescriptor
 import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
 import org.jetbrains.kotlin.resolve.calls.model.*
 import org.jetbrains.kotlin.resolve.calls.tower.ResolutionCandidateApplicability
+import org.jetbrains.kotlin.utils.SmartList
 
 class TypeArgumentsToParametersMapper {
 
     sealed class TypeArgumentsMapping(val diagnostics: List<KotlinCallDiagnostic>) {
 
-        abstract fun getTypeArgument(typeParameterDescriptor: TypeParameterDescriptor): TypeArgument
+        abstract fun getTypeArguments(typeParameterDescriptor: TypeParameterDescriptor): List<TypeArgument>
 
         object NoExplicitArguments : TypeArgumentsMapping(emptyList()) {
-            override fun getTypeArgument(typeParameterDescriptor: TypeParameterDescriptor): TypeArgument =
-                TypeArgumentPlaceholder
+            override fun getTypeArguments(typeParameterDescriptor: TypeParameterDescriptor): List<TypeArgument> =
+                SmartList(TypeArgumentPlaceholder)
         }
 
         class TypeArgumentsMappingImpl(
             diagnostics: List<KotlinCallDiagnostic>,
-            private val typeParameterToArgumentMap: Map<TypeParameterDescriptor, TypeArgument>
+            private val typeParameterToArgumentMap: Map<TypeParameterDescriptor, List<TypeArgument>>
         ) : TypeArgumentsMapping(diagnostics) {
-            override fun getTypeArgument(typeParameterDescriptor: TypeParameterDescriptor): TypeArgument =
-                typeParameterToArgumentMap[typeParameterDescriptor] ?: TypeArgumentPlaceholder
+            override fun getTypeArguments(typeParameterDescriptor: TypeParameterDescriptor): List<TypeArgument> =
+                typeParameterToArgumentMap[typeParameterDescriptor] ?: SmartList(TypeArgumentPlaceholder)
         }
     }
 
@@ -46,13 +47,30 @@ class TypeArgumentsToParametersMapper {
             return TypeArgumentsMapping.NoExplicitArguments
         }
 
-        if (call.typeArguments.size != descriptor.typeParameters.size) {
-            return TypeArgumentsMapping.TypeArgumentsMappingImpl(
-                listOf(WrongCountOfTypeArguments(descriptor, call.typeArguments.size)), emptyMap()
-            )
+        val last = descriptor.typeParameters.lastOrNull()
+        if (last?.isVariadic != true) {
+            if (call.typeArguments.size != descriptor.typeParameters.size) {
+                return TypeArgumentsMapping.TypeArgumentsMappingImpl(
+                    listOf(WrongCountOfTypeArguments(descriptor, call.typeArguments.size)), emptyMap()
+                )
+            } else {
+                val typeParameterToArgumentMap = descriptor.typeParameters.zip(call.typeArguments).associate {
+                    Pair(it.first, SmartList(it.second))
+                }
+                return TypeArgumentsMapping.TypeArgumentsMappingImpl(listOf(), typeParameterToArgumentMap)
+            }
         } else {
-            val typeParameterToArgumentMap = descriptor.typeParameters.zip(call.typeArguments).associate { it }
-            return TypeArgumentsMapping.TypeArgumentsMappingImpl(listOf(), typeParameterToArgumentMap)
+            if (call.typeArguments.size < descriptor.typeParameters.size - 1) {
+                return TypeArgumentsMapping.TypeArgumentsMappingImpl(
+                    listOf(WrongCountOfTypeArguments(descriptor, call.typeArguments.size)), emptyMap()
+                )
+            } else {
+                val typeParameterToArgumentMap = descriptor.typeParameters.dropLast(1).zip(call.typeArguments).associate {
+                    Pair(it.first, SmartList(it.second))
+                }.toMutableMap<TypeParameterDescriptor, List<TypeArgument>>()
+                typeParameterToArgumentMap[last] = call.typeArguments.subList(descriptor.typeParameters.lastIndex, call.typeArguments.size)
+                return TypeArgumentsMapping.TypeArgumentsMappingImpl(listOf(), typeParameterToArgumentMap)
+            }
         }
     }
 

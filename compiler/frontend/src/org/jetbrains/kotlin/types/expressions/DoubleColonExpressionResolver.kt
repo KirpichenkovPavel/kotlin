@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.descriptors.impl.LocalVariableDescriptor
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.diagnostics.Errors.*
 import org.jetbrains.kotlin.lexer.KtTokens
+import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.codeFragmentUtil.suppressDiagnosticsInDebugMode
@@ -27,6 +28,7 @@ import org.jetbrains.kotlin.resolve.*
 import org.jetbrains.kotlin.resolve.calls.CallResolver
 import org.jetbrains.kotlin.resolve.calls.callResolverUtil.ResolveArgumentsMode
 import org.jetbrains.kotlin.resolve.calls.callUtil.getCalleeExpressionIfAny
+import org.jetbrains.kotlin.resolve.calls.callUtil.getParentCall
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
 import org.jetbrains.kotlin.resolve.calls.checkers.isBuiltInCoroutineContext
 import org.jetbrains.kotlin.resolve.calls.context.*
@@ -50,6 +52,7 @@ import org.jetbrains.kotlin.types.typeUtil.builtIns
 import org.jetbrains.kotlin.types.typeUtil.isSubtypeOf
 import org.jetbrains.kotlin.types.typeUtil.makeNotNullable
 import org.jetbrains.kotlin.types.typeUtil.makeNullable
+import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 import org.jetbrains.kotlin.utils.yieldIfNotNull
 import java.util.*
 import javax.inject.Inject
@@ -144,18 +147,28 @@ class DoubleColonExpressionResolver(
             }
         }
 
-        if (type is SimpleType && !type.isMarkedNullable && descriptor is TypeParameterDescriptor && !descriptor.isReified) {
+        if (type is SimpleType && !type.isMarkedNullable && descriptor is TypeParameterDescriptor
+            && !descriptor.isReified && !expression.mayBeReified(c.trace.bindingContext)
+        ) {
             c.trace.report(TYPE_PARAMETER_AS_REIFIED.on(expression, descriptor))
         }
         // Note that "T::class" is allowed for type parameter T without a non-null upper bound
         else if ((TypeUtils.isNullableType(type) && descriptor !is TypeParameterDescriptor) || expression.hasQuestionMarks) {
             c.trace.report(NULLABLE_TYPE_IN_CLASS_LITERAL_LHS.on(expression))
-        } else if (!result.possiblyBareType.isBare && !isAllowedInClassLiteral(type)) {
+        } else if (!result.possiblyBareType.isBare && !isAllowedInClassLiteral(type) && !expression.mayBeReified(c.trace.bindingContext)) {
             c.trace.report(CLASS_LITERAL_LHS_NOT_A_CLASS.on(expression))
         }
         for (additionalChecker in additionalCheckers) {
             additionalChecker.check(expression, type, c)
         }
+    }
+
+    private fun KtExpression.mayBeReified(context: BindingContext): Boolean {
+        val parentAnnotationIfAny = this.getParentCall(context)?.callElement?.safeAs<KtAnnotationEntry>()
+            ?: return false
+        return context.get(BindingContext.ANNOTATION, parentAnnotationIfAny)?.fqName?.equals(
+            FqName("kotlin.experimental.TypeIndex")
+        ) ?: false
     }
 
     // Returns true if the expression is not a call expression without value arguments (such as "A<B>") or a qualified expression

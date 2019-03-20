@@ -121,7 +121,8 @@ private val DEFAULT_DECLARATION_CHECKERS = listOf(
     PropertiesWithBackingFieldsInsideInlineClass(),
     AnnotationClassTargetAndRetentionChecker(),
     ReservedMembersAndConstructsForInlineClass(),
-    ResultClassInReturnTypeChecker()
+    ResultClassInReturnTypeChecker(),
+    VariadicDeclarationChecker()
 )
 
 private val DEFAULT_CALL_CHECKERS = listOf(
@@ -132,7 +133,8 @@ private val DEFAULT_CALL_CHECKERS = listOf(
     CallableReferenceCompatibilityChecker(), LateinitIntrinsicApplicabilityChecker,
     UnderscoreUsageChecker, AssigningNamedArgumentToVarargChecker(),
     PrimitiveNumericComparisonCallChecker, LambdaWithSuspendModifierCallChecker,
-    UselessElvisCallChecker(), ResultTypeWithNullableOperatorsChecker()
+    UselessElvisCallChecker(), ResultTypeWithNullableOperatorsChecker(),
+    VariadicMethodCallChecker()
 )
 private val DEFAULT_TYPE_CHECKERS = emptyList<AdditionalTypeChecker>()
 private val DEFAULT_CLASSIFIER_USAGE_CHECKERS = listOf(

@@ -82,6 +82,10 @@ public class KtTypeParameter extends KtNamedDeclarationStub<KotlinTypeParameterS
         return null;
     }
 
+    public boolean isVariadic() {
+        return findChildByType(KtTokens.ELLIPSIS) != null;
+    }
+
     @Nullable
     public KtTypeReference getExtendsBound() {
         return getStubOrPsiChild(KtStubElementTypes.TYPE_REFERENCE);

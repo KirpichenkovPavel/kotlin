@@ -166,6 +166,8 @@ class IntegerValueTypeConstant(
 
     fun getType(expectedType: KotlinType): KotlinType = TypeUtils.getPrimitiveNumberType(typeConstructor, expectedType)
 
+    fun getNumberValue(): Number = this.value
+
     override fun toString() = typeConstructor.toString()
 
     override fun equals(other: Any?) = other is IntegerValueTypeConstant && value == other.value && parameters == other.parameters

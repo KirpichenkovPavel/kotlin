@@ -109,7 +109,7 @@ object KSerializerDescriptorResolver {
         val typeParameters: List<TypeParameterDescriptor> =
             thisDescriptor.declaredTypeParameters.mapIndexed { index, param ->
                 TypeParameterDescriptorImpl.createWithDefaultBound(
-                    serializerDescriptor, Annotations.EMPTY, false, Variance.INVARIANT,
+                    serializerDescriptor, Annotations.EMPTY, false, false, Variance.INVARIANT,
                     param.name, index
                 )
             }
@@ -307,7 +307,7 @@ object KSerializerDescriptorResolver {
         val targs = mutableListOf<TypeParameterDescriptor>()
         val args = serializableDescriptor.declaredTypeParameters.mapIndexed { index, param ->
             val targ = TypeParameterDescriptorImpl.createWithDefaultBound(
-                constrDesc, Annotations.EMPTY, false, Variance.INVARIANT,
+                constrDesc, Annotations.EMPTY, false, false, Variance.INVARIANT,
                 param.name, index
             )
 
@@ -342,7 +342,7 @@ object KSerializerDescriptorResolver {
 
         serializableClass.declaredTypeParameters.forEach { _ ->
             val targ = TypeParameterDescriptorImpl.createWithDefaultBound(
-                f, Annotations.EMPTY, false, Variance.INVARIANT,
+                f, Annotations.EMPTY, false, false, Variance.INVARIANT,
                 Name.identifier("T$i"), i
             )
 

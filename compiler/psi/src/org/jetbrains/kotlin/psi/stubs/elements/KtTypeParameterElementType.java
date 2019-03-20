@@ -37,7 +37,9 @@ public class KtTypeParameterElementType extends KtStubElementType<KotlinTypePara
     @Override
     public KotlinTypeParameterStub createStub(@NotNull KtTypeParameter psi, StubElement parentStub) {
         return new KotlinTypeParameterStubImpl(parentStub, StringRef.fromString(psi.getName()),
-                                               psi.getVariance() == Variance.IN_VARIANCE, psi.getVariance() == Variance.OUT_VARIANCE);
+                                               psi.getVariance() == Variance.IN_VARIANCE,
+                                               psi.getVariance() == Variance.OUT_VARIANCE,
+                                               psi.isVariadic());
     }
 
     @Override
@@ -53,7 +55,8 @@ public class KtTypeParameterElementType extends KtStubElementType<KotlinTypePara
         StringRef name = dataStream.readName();
         boolean isInVariance = dataStream.readBoolean();
         boolean isOutVariance = dataStream.readBoolean();
+        boolean isVariadic = dataStream.readBoolean();
 
-        return new KotlinTypeParameterStubImpl(parentStub, name, isInVariance, isOutVariance);
+        return new KotlinTypeParameterStubImpl(parentStub, name, isInVariance, isOutVariance, isVariadic);
     }
 }

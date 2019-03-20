@@ -122,6 +122,7 @@ interface KotlinCallableStubBase<TDeclaration : KtCallableDeclaration> : KotlinS
 interface KotlinTypeParameterStub : KotlinStubWithFqName<KtTypeParameter> {
     fun isInVariance(): Boolean
     fun isOutVariance(): Boolean
+    fun isVariadic(): Boolean
 }
 
 interface KotlinTypeProjectionStub : StubElement<KtTypeProjection> {

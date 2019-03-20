@@ -950,6 +950,10 @@ public class DefaultErrorMessages {
 
         MAP.put(ERROR_IN_CONTRACT_DESCRIPTION, "Error in contract description: {0}", TO_STRING);
         MAP.put(CONTRACT_NOT_ALLOWED, "{0}", TO_STRING);
+        MAP.put(VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS, "Variadic type parameter index is out of bounds");
+        MAP.put(VARIADIC_TYPE_PARAMETER_NOT_COMPILE_TIME_CONSTANT_INDEX, "Variadic type parameter index is not compile time constant");
+        MAP.put(TYPE_INDEX_ON_NON_VARIADIC_RECEIVER, "Type index used on receiver without variadic type parameters");
+        MAP.put(VARIADIC_PARAMETER_IS_NOT_LAST, "Variadic generic parameter should be placed after all other parameters");
 
         MAP.setImmutable();
 

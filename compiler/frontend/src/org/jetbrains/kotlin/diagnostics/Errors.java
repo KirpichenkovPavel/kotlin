@@ -174,6 +174,10 @@ public interface Errors {
     DiagnosticFactory1<KtTypeElement, KotlinType> EXPANDED_TYPE_CANNOT_BE_INHERITED = DiagnosticFactory1.create(ERROR);
 
     DiagnosticFactory0<KtModifierList> MODIFIER_LIST_NOT_ALLOWED = DiagnosticFactory0.create(ERROR);
+    DiagnosticFactory0<PsiElement> VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS = DiagnosticFactory0.create(ERROR);
+    DiagnosticFactory0<PsiElement> VARIADIC_TYPE_PARAMETER_NOT_COMPILE_TIME_CONSTANT_INDEX = DiagnosticFactory0.create(ERROR);
+    DiagnosticFactory0<PsiElement> TYPE_INDEX_ON_NON_VARIADIC_RECEIVER = DiagnosticFactory0.create(ERROR);
+    DiagnosticFactory0<PsiElement> VARIADIC_PARAMETER_IS_NOT_LAST = DiagnosticFactory0.create(ERROR);
 
     ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

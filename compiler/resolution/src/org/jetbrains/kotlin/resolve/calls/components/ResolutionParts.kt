@@ -143,6 +143,7 @@ internal object CreateFreshVariablesSubstitutor : ResolutionPart() {
         val typeParameters = candidateDescriptor.original.typeParameters
         for (index in typeParameters.indices) {
             val typeParameter = typeParameters[index]
+            if (typeParameter.isVariadic) continue
             val freshVariable = toFreshVariables.freshVariables[index]
 
             val knownTypeArgument = knownTypeParametersResultingSubstitutor?.substitute(typeParameter.defaultType)
@@ -155,17 +156,18 @@ internal object CreateFreshVariablesSubstitutor : ResolutionPart() {
                 continue
             }
 
-            val typeArgument = resolvedCall.typeArgumentMappingByOriginal.getTypeArgument(typeParameter)
-
-            if (typeArgument is SimpleTypeArgument) {
-                csBuilder.addEqualityConstraint(
-                    freshVariable.defaultType,
-                    typeArgument.type,
-                    ExplicitTypeParameterConstraintPosition(typeArgument)
-                )
-            } else {
-                assert(typeArgument == TypeArgumentPlaceholder) {
-                    "Unexpected typeArgument: $typeArgument, ${typeArgument.javaClass.canonicalName}"
+            val typeArguments = resolvedCall.typeArgumentMappingByOriginal.getTypeArguments(typeParameter)
+            for (typeArgument in typeArguments) {
+                if (typeArgument is SimpleTypeArgument) {
+                    csBuilder.addEqualityConstraint(
+                        freshVariable.defaultType,
+                        typeArgument.type,
+                        ExplicitTypeParameterConstraintPosition(typeArgument)
+                    )
+                } else {
+                    assert(typeArgument == TypeArgumentPlaceholder) {
+                        "Unexpected typeArgument: $typeArgument, ${typeArgument.javaClass.canonicalName}"
+                    }
                 }
             }
         }

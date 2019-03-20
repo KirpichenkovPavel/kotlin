@@ -1542,7 +1542,7 @@ public class KotlinParsing extends AbstractKotlinParsing {
 
         boolean typeParameterListOccurred = false;
         if (at(LT)) {
-            parseTypeParameterList(TokenSet.create(LBRACKET, LBRACE, RBRACE, LPAR));
+            parseTypeParameterList(TokenSet.create(LBRACKET, LBRACE, RBRACE, LPAR, ELLIPSIS));
             typeParameterListOccurred = true;
         }
 
@@ -1888,9 +1888,11 @@ public class KotlinParsing extends AbstractKotlinParsing {
 
         PsiBuilder.Marker mark = mark();
 
-        parseModifierList(DEFAULT, TokenSet.create(GT, COMMA, COLON));
+        parseModifierList(DEFAULT, TokenSet.create(GT, COMMA, COLON, ELLIPSIS));
 
         expect(IDENTIFIER, "Type parameter name expected", TokenSet.EMPTY);
+
+        parseVariadicTypeParameterModifier();
 
         if (at(COLON)) {
             advance(); // COLON
@@ -1899,6 +1901,17 @@ public class KotlinParsing extends AbstractKotlinParsing {
 
         mark.done(TYPE_PARAMETER);
 
+    }
+
+    private void parseVariadicTypeParameterModifier() {
+        PsiBuilder.Marker mark = mark();
+        if (at(KtTokens.ELLIPSIS)) {
+            advance(); // ELLIPSIS
+            mark.collapse(ELLIPSIS);
+        }
+        else {
+            mark.drop();
+        }
     }
 
     /*

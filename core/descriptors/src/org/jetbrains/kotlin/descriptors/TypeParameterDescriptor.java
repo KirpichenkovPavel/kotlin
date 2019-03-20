@@ -25,6 +25,7 @@ import java.util.List;
 
 public interface TypeParameterDescriptor extends ClassifierDescriptor {
     boolean isReified();
+    boolean isVariadic();
 
     @NotNull
     Variance getVariance();

@@ -137,6 +137,8 @@ open class WrappedTypeParameterDescriptor(
 
     override fun isReified() = owner.isReified
 
+    override fun isVariadic() = false
+
     override fun getVariance() = owner.variance
 
     override fun getUpperBounds() = owner.superTypes.map { it.toKotlinType() }

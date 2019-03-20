@@ -128,7 +128,9 @@ interface NewTypeSubstitutor {
         val arguments = type.arguments
         if (parameters.size != arguments.size) {
             // todo error type or exception?
-            return ErrorUtils.createErrorType("Inconsistent type: $type (parameters.size = ${parameters.size}, arguments.size = ${arguments.size})")
+            val lastIsVariadic = parameters.lastOrNull()?.isVariadic == true
+            if (!lastIsVariadic || arguments.size < parameters.size - 1)
+                return ErrorUtils.createErrorType("Inconsistent type: $type (parameters.size = ${parameters.size}, arguments.size = ${arguments.size})")
         }
         val newArguments = arrayOfNulls<TypeProjection?>(arguments.size)
 
@@ -164,4 +166,12 @@ class FreshVariableNewTypeSubstitutor(val freshVariables: List<TypeVariableFromC
     companion object {
         val Empty = FreshVariableNewTypeSubstitutor(emptyList())
     }
+}
+
+open class DelegatingNewTypeSubstitutor(val delegate: NewTypeSubstitutor) : NewTypeSubstitutor {
+    override fun substituteNotNullTypeWithConstructor(constructor: TypeConstructor): UnwrappedType? =
+        delegate.substituteNotNullTypeWithConstructor(constructor)
+
+    override fun safeSubstitute(type: UnwrappedType): UnwrappedType = delegate.safeSubstitute(type)
+    override fun substituteKeepAnnotations(type: UnwrappedType): UnwrappedType = delegate.substituteKeepAnnotations(type)
 }
