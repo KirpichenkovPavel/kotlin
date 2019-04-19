@@ -72,9 +72,9 @@ internal object CheckVisibility : ResolutionPart() {
 internal object MapTypeArguments : ResolutionPart() {
     override fun KotlinResolutionCandidate.process(workIndex: Int) {
         resolvedCall.typeArgumentMappingByOriginal =
-                callComponents.typeArgumentsToParametersMapper.mapTypeArguments(kotlinCall, candidateDescriptor.original).also {
-                    it.diagnostics.forEach(this@process::addDiagnostic)
-                }
+            callComponents.typeArgumentsToParametersMapper.mapTypeArguments(kotlinCall, candidateDescriptor.original).also {
+                it.diagnostics.forEach(this@process::addDiagnostic)
+            }
     }
 }
 
@@ -179,7 +179,7 @@ internal object CreateFreshVariablesSubstitutor : ResolutionPart() {
     ): FreshVariableNewTypeSubstitutor {
         val typeParameters = candidateDescriptor.typeParameters
 
-        val freshTypeVariables = typeParameters.map { TypeVariableFromCallableDescriptor(it) }
+        val freshTypeVariables = typeParameters.map { SimpleTypeVariableFromCallableDescriptor(it) }
 
         val toFreshVariables = FreshVariableNewTypeSubstitutor(freshTypeVariables)
 
@@ -272,7 +272,8 @@ private fun KotlinResolutionCandidate.getExpectedTypeWithSAMConversion(
     if (!argumentIsFunctional) return null
 
     val originalExpectedType = argument.getExpectedType(candidateParameter.original, callComponents.languageVersionSettings)
-    val convertedTypeByOriginal = callComponents.samConversionTransformer.getFunctionTypeForPossibleSamType(originalExpectedType) ?: return null
+    val convertedTypeByOriginal =
+        callComponents.samConversionTransformer.getFunctionTypeForPossibleSamType(originalExpectedType) ?: return null
 
     val candidateExpectedType = argument.getExpectedType(candidateParameter, callComponents.languageVersionSettings)
     val convertedTypeByCandidate = callComponents.samConversionTransformer.getFunctionTypeForPossibleSamType(candidateExpectedType)
@@ -331,6 +332,42 @@ internal object CheckExternalArgument : ResolutionPart() {
 
         resolveKotlinArgument(argument, resolvedCall.argumentToCandidateParameter[argument], isReceiver = false)
     }
+}
+
+internal object CheckVariadicGenericArguments : ResolutionPart() {
+    override fun KotlinResolutionCandidate.process(workIndex: Int) {
+        val (originalTypeParameter, passedValueArguments) = valueArgumentsForVariadicTypeParameterOrNull() ?: return
+        val freshVariablesForUpdate = resolvedCall.substitutor.freshVariables.toMutableList()
+        for (index in passedValueArguments.arguments.indices) {
+            val newTypeVariable = VariadicTypeVariableFromCallableDescriptor(originalTypeParameter, index)
+            val substitutedTypeArgumentType =
+                resolvedCall.typeArgumentMappingByOriginal.getTypeArguments(originalTypeParameter).getOrNull(index)
+                    ?.safeAs<SimpleTypeArgument>()?.type ?: continue
+            val callArgument = passedValueArguments.arguments[index].safeAs<ExpressionKotlinCallArgument>() ?: continue
+            val substitutedArgumentType = callArgument.receiver.stableType
+            csBuilder.registerVariable(newTypeVariable)
+            csBuilder.addEqualityConstraint(
+                substitutedTypeArgumentType,
+                newTypeVariable.defaultType,
+                VariadicTypeParameterConstraintPosition()
+            )
+            csBuilder.addSubtypeConstraint(
+                substitutedArgumentType,
+                newTypeVariable.defaultType,
+                ArgumentConstraintPosition(callArgument)
+            )
+            freshVariablesForUpdate.add(newTypeVariable)
+        }
+        resolvedCall.substitutor = FreshVariableNewTypeSubstitutor(freshVariablesForUpdate)
+    }
+
+    private fun KotlinResolutionCandidate.valueArgumentsForVariadicTypeParameterOrNull() =
+        resolvedCall.argumentMappingByOriginal.entries.mapNotNull { parameterToArguments ->
+            parameterToArguments.key.varargElementType?.constructor?.declarationDescriptor
+                ?.safeAs<TypeParameterDescriptor>()
+                ?.takeIf { typeParameterDescriptor -> typeParameterDescriptor.isVariadic }
+                ?.let { typeParameterDescriptor -> typeParameterDescriptor to parameterToArguments.value }
+        }.singleOrNull()
 }
 
 internal object CheckInfixResolutionPart : ResolutionPart() {

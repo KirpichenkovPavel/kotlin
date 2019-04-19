@@ -1,0 +1,12 @@
+package
+
+public fun test(): kotlin.Unit
+
+public final class Tuple</*0*/ Ts> {
+    public constructor Tuple</*0*/ Ts>(/*0*/ vararg values: Ts /*kotlin.Array<out Ts>*/)
+    public final val values: kotlin.Array<out Ts>
+    public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+    public final fun </*0*/ T, /*1*/ R> let(/*0*/ ix: @kotlin.experimental.TypeIndex(targetType = T::class, variadicParameter = Ts::class) kotlin.Int, /*1*/ block: (@kotlin.experimental.TypeArguments(types = {Ts::class}) Tuple<kotlin.Any?>).(value: T) -> R): R
+    public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+}

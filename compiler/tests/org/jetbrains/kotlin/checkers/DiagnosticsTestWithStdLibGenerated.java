@@ -3282,14 +3282,39 @@ public class DiagnosticsTestWithStdLibGenerated extends AbstractDiagnosticsTestW
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/inferTypeFromTuple.kt");
         }
 
+        @TestMetadata("letOnIndex.kt")
+        public void testLetOnIndex() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/letOnIndex.kt");
+        }
+
         @TestMetadata("mixedTypeArguments.kt")
         public void testMixedTypeArguments() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/mixedTypeArguments.kt");
         }
 
+        @TestMetadata("noTypesOnInitializer.kt")
+        public void testNoTypesOnInitializer() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/noTypesOnInitializer.kt");
+        }
+
+        @TestMetadata("operatorSet.kt")
+        public void testOperatorSet() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/operatorSet.kt");
+        }
+
+        @TestMetadata("simpleSet.kt")
+        public void testSimpleSet() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/simpleSet.kt");
+        }
+
         @TestMetadata("spreadOperatorInTupleConstructor.kt")
         public void testSpreadOperatorInTupleConstructor() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/spreadOperatorInTupleConstructor.kt");
+        }
+
+        @TestMetadata("tupleSum.kt")
+        public void testTupleSum() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/tupleSum.kt");
         }
 
         @TestMetadata("tupleWithOperatorGet.kt")
@@ -3335,6 +3360,11 @@ public class DiagnosticsTestWithStdLibGenerated extends AbstractDiagnosticsTestW
         @TestMetadata("variadicReceiverAsTopLevelConstant.kt")
         public void testVariadicReceiverAsTopLevelConstant() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variadicReceiverAsTopLevelConstant.kt");
+        }
+
+        @TestMetadata("variantBase.kt")
+        public void testVariantBase() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variantBase.kt");
         }
     }
 

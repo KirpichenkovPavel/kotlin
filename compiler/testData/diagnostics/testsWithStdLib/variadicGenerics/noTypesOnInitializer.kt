@@ -4,14 +4,17 @@
 import kotlin.experimental.*
 
 class Tuple<Ts...> (vararg val values: Ts) {
-    fun <T> get(
+    operator fun <T> get(
         ix: @TypeIndex(Ts::class, T::class) Int
     ): T = values[ix] as T
 }
 
 fun test() {
-    val args = arrayOf("str", 1)
-    val tuple = Tuple<String, Int>(*<!TYPE_MISMATCH!>args<!>)
-    val first: String = tuple.get(0)
-    val second: Int = tuple.get(1)
+    val tuple: Tuple<Int, String> = Tuple(5, "str")
+    val int: Int = tuple[0]
+    val string: String = tuple[1]
+}
+
+fun test2() {
+    val tuple: Tuple<Int, String> = Tuple(5, <!TYPE_MISMATCH!>11.7<!>)
 }

@@ -11,7 +11,9 @@ class Tuple<Ts...> (vararg val values: Ts) {
 
 fun test () {
     val tuple = Tuple<Int, String>(42, "42")
-    val first = tuple[0]
-    val second = tuple[1]
+    val first: Int = tuple[0]
+    val second: String = tuple[1]
+    val wrongType: Double = <!TYPE_MISMATCH, TYPE_MISMATCH!>tuple[0]<!>
+    <!UNREACHABLE_CODE!>val third: Nothing =<!> tuple[<!VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS!>2<!>]
 }
 

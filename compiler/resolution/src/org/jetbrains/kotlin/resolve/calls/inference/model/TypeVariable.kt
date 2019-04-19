@@ -55,12 +55,22 @@ sealed class NewTypeVariable(builtIns: KotlinBuiltIns, name: String) {
     override fun toString() = freshTypeConstructor.toString()
 }
 
-class TypeVariableFromCallableDescriptor(
-    val originalTypeParameter: TypeParameterDescriptor
-) : NewTypeVariable(originalTypeParameter.builtIns, originalTypeParameter.name.identifier)
+open class TypeVariableFromCallableDescriptor(
+    val originalTypeParameter: TypeParameterDescriptor,
+    name: String
+) : NewTypeVariable(originalTypeParameter.builtIns, name)
 
 class TypeVariableForLambdaReturnType(
     val lambdaArgument: LambdaKotlinCallArgument,
     builtIns: KotlinBuiltIns,
     name: String
 ) : NewTypeVariable(builtIns, name)
+
+class SimpleTypeVariableFromCallableDescriptor(
+    originalTypeParameter: TypeParameterDescriptor
+) : TypeVariableFromCallableDescriptor(originalTypeParameter, originalTypeParameter.name.identifier)
+
+class VariadicTypeVariableFromCallableDescriptor(
+    originalTypeParameter: TypeParameterDescriptor,
+    val index: Int
+) : TypeVariableFromCallableDescriptor(originalTypeParameter, "${originalTypeParameter.name.identifier}[$index]")
