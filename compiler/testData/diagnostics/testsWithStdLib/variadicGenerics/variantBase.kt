@@ -15,7 +15,7 @@ class Variant<Ts...> () {
     }
 
     operator fun <T> get (ix: @TypeIndex(Ts::class, T::class) Int): T? {
-        if (index == -1) throw java.lang.Exception()
+        if (index == -1) throw java.lang.Exception() // not initialized
         if (ix != index) return null
         return value as T
     }
@@ -31,6 +31,6 @@ fun test() {
 
 fun test2() {
     val variant = Variant<Int, String>()
-    variant[0] = <!TYPE_MISMATCH!>"bar"<!>
+    <!TYPE_MISMATCH, TYPE_MISMATCH!>variant[0]<!> = "bar"
     variant[<!VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS!>2<!>] = Unit
 }

@@ -1,0 +1,10 @@
+package
+
+public val test: @kotlin.experimental.TypeArguments(types = {kotlin.Int::class, kotlin.String::class}) Variadic<kotlin.Any?>
+
+public final class Variadic</*0*/ Ts> {
+    public constructor Variadic</*0*/ Ts>()
+    public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+}

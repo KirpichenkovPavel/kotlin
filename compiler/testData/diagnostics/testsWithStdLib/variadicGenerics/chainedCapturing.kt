@@ -8,10 +8,10 @@ class Tuple<Ts...> (vararg values: Ts) {
     fun <T> get(ix: @TypeIndex(Ts::class, T::class) Int): T = _values[ix] as T
 }
 
+val tuple = Tuple<String, Double>("a", 26.5)
+
 fun test() {
-    val inInt: Int = 5
-    val inDouble: Double = 0.25
-    val tuple: Tuple<Int, Double> = Tuple<Int, Double>(inInt, inDouble)
-    val outInt: Int = tuple.get(0)
-    val outDouble: Double = tuple.get(1)
+    fun anotherScope() {
+        val b: String = tuple.get(0)
+    }
 }

@@ -192,7 +192,7 @@ public abstract class AbstractTypeParameterDescriptor extends DeclarationDescrip
 
         @Override
         public String toString() {
-            return getName().toString();
+            return String.format("%s%s", getName().toString(), isVariadic() ? "..." : "");
         }
 
         @NotNull

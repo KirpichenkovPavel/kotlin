@@ -3262,6 +3262,11 @@ public class DiagnosticsTestWithStdLibUsingJavacGenerated extends AbstractDiagno
             KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.ANY, true);
         }
 
+        @TestMetadata("chainedCapturing.kt")
+        public void testChainedCapturing() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/chainedCapturing.kt");
+        }
+
         @TestMetadata("completeTypeDeclarations.kt")
         public void testCompleteTypeDeclarations() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/completeTypeDeclarations.kt");
@@ -3290,6 +3295,11 @@ public class DiagnosticsTestWithStdLibUsingJavacGenerated extends AbstractDiagno
         @TestMetadata("mixedTypeArguments.kt")
         public void testMixedTypeArguments() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/mixedTypeArguments.kt");
+        }
+
+        @TestMetadata("noTypeInfo.kt")
+        public void testNoTypeInfo() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/noTypeInfo.kt");
         }
 
         @TestMetadata("noTypesOnInitializer.kt")
@@ -3340,6 +3350,11 @@ public class DiagnosticsTestWithStdLibUsingJavacGenerated extends AbstractDiagno
         @TestMetadata("typeMismatch.kt")
         public void testTypeMismatch() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/typeMismatch.kt");
+        }
+
+        @TestMetadata("variableExpressionTypeMismatch.kt")
+        public void testVariableExpressionTypeMismatch() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variableExpressionTypeMismatch.kt");
         }
 
         @TestMetadata("variablesInTupleConstructor.kt")

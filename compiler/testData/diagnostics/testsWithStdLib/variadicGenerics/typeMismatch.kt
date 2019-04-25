@@ -3,8 +3,9 @@
 
 import kotlin.experimental.*
 
-class Tuple<Ts...> (vararg val values: Ts) {
-    fun <T> get(ix: @TypeIndex(Ts::class, T::class) Int): T = values[ix] as T
+class Tuple<Ts...> (vararg values: Ts) {
+    private val _values: Array<Any?> = arrayOf(*values)
+    fun <T> get(ix: @TypeIndex(Ts::class, T::class) Int): T = _values[ix] as T
 }
 
 fun inputTypeMismatch() {

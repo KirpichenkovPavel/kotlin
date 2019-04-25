@@ -9,9 +9,7 @@ class Tuple<Ts...> (vararg values: Ts) {
 }
 
 fun test() {
-    val inInt: Int = 5
-    val inDouble: Double = 0.25
-    val tuple: Tuple<Int, Double> = Tuple<Int, Double>(inInt, inDouble)
-    val outInt: Int = tuple.get(0)
-    val outDouble: Double = tuple.get(1)
+    val tuple = Tuple(1, "foo")
+    val first: Int = tuple.get(0)
+    val second: String = tuple.get(1)
 }

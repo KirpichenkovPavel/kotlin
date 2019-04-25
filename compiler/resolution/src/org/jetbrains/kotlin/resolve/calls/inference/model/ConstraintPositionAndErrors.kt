@@ -73,8 +73,12 @@ class CoroutinePosition() : ConstraintPosition() {
     override fun toString(): String = "for coroutine call"
 }
 
-class VariadicTypeParameterConstraintPosition : ConstraintPosition() {
-    override fun toString(): String = "Variadic type parameter constraint"
+class VariadicTypeParameterConstraintPosition(val topLevelCall: KotlinCall) : ConstraintPosition() {
+    override fun toString(): String = "Variadic type parameter constraint for $topLevelCall"
+}
+
+class ExplicitVariadicTypeArgumentConstraintPosition(val typeArgument: SimpleTypeArgument) : ConstraintPosition() {
+    override fun toString(): String = "Variadic type parameter constraint for $typeArgument"
 }
 
 @Deprecated("Should be used only in SimpleConstraintSystemImpl")

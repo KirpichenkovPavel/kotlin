@@ -33,6 +33,7 @@ import org.jetbrains.kotlin.resolve.calls.model.*
 import org.jetbrains.kotlin.resolve.calls.tasks.ExplicitReceiverKind
 import org.jetbrains.kotlin.resolve.constants.KClassValue
 import org.jetbrains.kotlin.resolve.scopes.receivers.ExpressionReceiver
+import org.jetbrains.kotlin.resolve.scopes.receivers.ReceiverValue
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.isError
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
@@ -74,10 +75,17 @@ fun <D : CallableDescriptor> ResolvedCall<D>.usesDefaultArguments(): Boolean {
     return valueArgumentsByIndex?.any { it is DefaultValueArgument } ?: false
 }
 
+private fun ReceiverValue.originalReceiver(): ReceiverValue {
+    var current = original
+    while (current !== current.original)
+        current = current.original
+    return current
+}
+
 fun ResolvedCall<*>.getVariadicTypeArgsFromDispatchReceiver(): List<KotlinType>? {
     val result: MutableList<KotlinType> = emptyList().toMutableList()
     if (explicitReceiverKind == ExplicitReceiverKind.DISPATCH_RECEIVER) {
-        val dispatchReceiverType = dispatchReceiver?.type ?: return null
+        val dispatchReceiverType = dispatchReceiver?.originalReceiver()?.type ?: return null
         val typeArgsAnnotation = dispatchReceiverType.annotations.findAnnotation(
             FqName("kotlin.experimental.TypeArguments")
         )

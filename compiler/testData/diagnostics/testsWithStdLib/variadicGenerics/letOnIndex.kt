@@ -3,11 +3,12 @@
 
 import kotlin.experimental.*
 
-class Tuple<Ts...> (vararg val values: Ts) {
+class Tuple<Ts...> (vararg values: Ts) {
+    private val _values: Array<Any?> = arrayOf(*values)
     fun <T, R> let(
         ix: @TypeIndex(Ts::class, T::class) Int,
         block: Tuple<Ts>.(value: T) -> R
-    ): R = block(values[ix] as T)
+    ): R = this.block(_values[ix] as T)
 }
 
 fun test() {

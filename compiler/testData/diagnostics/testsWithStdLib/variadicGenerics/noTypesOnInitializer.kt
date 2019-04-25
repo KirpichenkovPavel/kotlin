@@ -3,10 +3,9 @@
 
 import kotlin.experimental.*
 
-class Tuple<Ts...> (vararg val values: Ts) {
-    operator fun <T> get(
-        ix: @TypeIndex(Ts::class, T::class) Int
-    ): T = values[ix] as T
+class Tuple<Ts...> (vararg values: Ts) {
+    private val _values: Array<Any?> = arrayOf(*values)
+    operator fun <T> get(ix: @TypeIndex(Ts::class, T::class) Int): T = _values[ix] as T
 }
 
 fun test() {
@@ -16,5 +15,5 @@ fun test() {
 }
 
 fun test2() {
-    val tuple: Tuple<Int, String> = Tuple(5, <!TYPE_MISMATCH!>11.7<!>)
+    val tuple: Tuple<Int, String> = <!TYPE_MISMATCH, TYPE_MISMATCH!>Tuple(5, 11.7)<!>
 }

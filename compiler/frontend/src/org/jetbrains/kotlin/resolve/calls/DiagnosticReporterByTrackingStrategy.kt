@@ -221,6 +221,13 @@ class DiagnosticReporterByTrackingStrategy(
                     val typeArgumentReference = (it.typeArgument as SimpleTypeArgumentImpl).typeReference
                     trace.report(UPPER_BOUND_VIOLATED.on(typeArgumentReference, constraintError.upperType, constraintError.lowerType))
                 }
+
+                (position as? VariadicTypeParameterConstraintPosition)?.let {
+                    val call = it.topLevelCall.psiKotlinCall.psiCall.callElement.safeAs<KtExpression>()
+                    reportIfNonNull(call) {
+                        trace.report(Errors.TYPE_MISMATCH.on(it, constraintError.upperType, constraintError.lowerType))
+                    }
+                }
             }
             CapturedTypeFromSubtyping::class.java -> {
                 val capturedError = diagnostic as CapturedTypeFromSubtyping

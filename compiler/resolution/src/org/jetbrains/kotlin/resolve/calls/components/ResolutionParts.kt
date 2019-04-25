@@ -143,7 +143,6 @@ internal object CreateFreshVariablesSubstitutor : ResolutionPart() {
         val typeParameters = candidateDescriptor.original.typeParameters
         for (index in typeParameters.indices) {
             val typeParameter = typeParameters[index]
-            if (typeParameter.isVariadic) continue
             val freshVariable = toFreshVariables.freshVariables[index]
 
             val knownTypeArgument = knownTypeParametersResultingSubstitutor?.substitute(typeParameter.defaultType)
@@ -157,13 +156,25 @@ internal object CreateFreshVariablesSubstitutor : ResolutionPart() {
             }
 
             val typeArguments = resolvedCall.typeArgumentMappingByOriginal.getTypeArguments(typeParameter)
-            for (typeArgument in typeArguments) {
+            assert(typeArguments.size == 1 || typeParameter.isVariadic) {
+                "Unexpected number of mapped type arguments for type parameter " +
+                        "$typeParameter: ${typeArguments.size} (${typeArguments.joinToString(", ")})"
+            }
+            typeArguments.forEach { typeArgument ->
                 if (typeArgument is SimpleTypeArgument) {
-                    csBuilder.addEqualityConstraint(
-                        freshVariable.defaultType,
-                        typeArgument.type,
-                        ExplicitTypeParameterConstraintPosition(typeArgument)
-                    )
+                    if (!typeParameter.isVariadic) {
+                        csBuilder.addEqualityConstraint(
+                            freshVariable.defaultType,
+                            typeArgument.type,
+                            ExplicitTypeParameterConstraintPosition(typeArgument)
+                        )
+                    } else {
+                        csBuilder.addSubtypeConstraint(
+                            typeArgument.type,
+                            freshVariable.defaultType,
+                            ExplicitTypeParameterConstraintPosition(typeArgument)
+                        )
+                    }
                 } else {
                     assert(typeArgument == TypeArgumentPlaceholder) {
                         "Unexpected typeArgument: $typeArgument, ${typeArgument.javaClass.canonicalName}"
@@ -336,37 +347,47 @@ internal object CheckExternalArgument : ResolutionPart() {
 
 internal object CheckVariadicGenericArguments : ResolutionPart() {
     override fun KotlinResolutionCandidate.process(workIndex: Int) {
-        val (originalTypeParameter, passedValueArguments) = valueArgumentsForVariadicTypeParameterOrNull() ?: return
-        val freshVariablesForUpdate = resolvedCall.substitutor.freshVariables.toMutableList()
-        for (index in passedValueArguments.arguments.indices) {
-            val newTypeVariable = VariadicTypeVariableFromCallableDescriptor(originalTypeParameter, index)
-            val substitutedTypeArgumentType =
-                resolvedCall.typeArgumentMappingByOriginal.getTypeArguments(originalTypeParameter).getOrNull(index)
-                    ?.safeAs<SimpleTypeArgument>()?.type ?: continue
-            val callArgument = passedValueArguments.arguments[index].safeAs<ExpressionKotlinCallArgument>() ?: continue
-            val substitutedArgumentType = callArgument.receiver.stableType
-            csBuilder.registerVariable(newTypeVariable)
-            csBuilder.addEqualityConstraint(
-                substitutedTypeArgumentType,
-                newTypeVariable.defaultType,
-                VariadicTypeParameterConstraintPosition()
-            )
-            csBuilder.addSubtypeConstraint(
-                substitutedArgumentType,
-                newTypeVariable.defaultType,
-                ArgumentConstraintPosition(callArgument)
-            )
-            freshVariablesForUpdate.add(newTypeVariable)
+        val originalTypeParameter = resolvedCall.candidateDescriptor.typeParameters.lastOrNull()?.takeIf { it.isVariadic } ?: return
+        val passedValueArguments = valueArgumentsForVariadicTypeParameterOrNull(originalTypeParameter)
+        val passedTypeArguments = resolvedCall.typeArgumentMappingByOriginal.getTypeArguments(originalTypeParameter)
+        val freshVariablesForUpdatedSubstitutor = resolvedCall.substitutor.freshVariables.toMutableList()
+        if (passedValueArguments != null && passedTypeArguments.singleOrNull() !is TypeArgumentPlaceholder
+            && passedValueArguments.arguments.size != passedTypeArguments.size) {
+            // TODO report diagnostic: explicit type arguments count not equal to vararg arguments count with variadic type
+            return
         }
-        resolvedCall.substitutor = FreshVariableNewTypeSubstitutor(freshVariablesForUpdate)
+        for (index in passedValueArguments?.arguments?.indices ?: passedTypeArguments.filter { it !is TypeArgumentPlaceholder }.indices) {
+            val newTypeVariable = VariadicTypeVariableFromCallableDescriptor(originalTypeParameter, index)
+            val substitutedTypeArgument = passedTypeArguments.getOrNull(index)?.safeAs<SimpleTypeArgument>()
+            val callArgument = passedValueArguments?.arguments?.get(index)?.safeAs<ExpressionKotlinCallArgument>()
+            csBuilder.registerVariable(newTypeVariable)
+            if (callArgument != null)
+                csBuilder.addSubtypeConstraint(
+                    callArgument.receiver.stableType,
+                    newTypeVariable.defaultType,
+                    ArgumentConstraintPosition(callArgument)
+                )
+            if (substitutedTypeArgument != null) {
+                val constraintPosition = if (callArgument != null) ArgumentConstraintPosition(callArgument)
+                else ExplicitVariadicTypeArgumentConstraintPosition(substitutedTypeArgument)
+                csBuilder.addEqualityConstraint(
+                    substitutedTypeArgument.type,
+                    newTypeVariable.defaultType,
+                    constraintPosition
+                )
+            }
+
+            freshVariablesForUpdatedSubstitutor.add(newTypeVariable)
+        }
+        resolvedCall.substitutor = FreshVariableNewTypeSubstitutor(freshVariablesForUpdatedSubstitutor)
     }
 
-    private fun KotlinResolutionCandidate.valueArgumentsForVariadicTypeParameterOrNull() =
+    private fun KotlinResolutionCandidate.valueArgumentsForVariadicTypeParameterOrNull(originalTypeParameter: TypeParameterDescriptor) =
         resolvedCall.argumentMappingByOriginal.entries.mapNotNull { parameterToArguments ->
             parameterToArguments.key.varargElementType?.constructor?.declarationDescriptor
                 ?.safeAs<TypeParameterDescriptor>()
-                ?.takeIf { typeParameterDescriptor -> typeParameterDescriptor.isVariadic }
-                ?.let { typeParameterDescriptor -> typeParameterDescriptor to parameterToArguments.value }
+                ?.takeIf { typeParameterDescriptor -> typeParameterDescriptor == originalTypeParameter }
+                ?.let { parameterToArguments.value }
         }.singleOrNull()
 }
 
