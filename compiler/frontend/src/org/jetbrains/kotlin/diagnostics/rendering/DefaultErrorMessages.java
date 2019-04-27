@@ -954,6 +954,7 @@ public class DefaultErrorMessages {
         MAP.put(VARIADIC_TYPE_PARAMETER_NOT_COMPILE_TIME_CONSTANT_INDEX, "Variadic type parameter index is not compile time constant");
         MAP.put(TYPE_INDEX_ON_NON_VARIADIC_RECEIVER, "Type index used on receiver without variadic type parameters");
         MAP.put(VARIADIC_PARAMETER_IS_NOT_LAST, "Variadic generic parameter should be placed after all other parameters");
+        MAP.put(VARIADIC_STAR_PROJECTION_MISUSE, "Star projection for variadic type parameter should be the only type argument for that parameter");
 
         MAP.setImmutable();
 

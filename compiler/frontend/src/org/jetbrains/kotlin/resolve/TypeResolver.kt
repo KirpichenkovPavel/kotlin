@@ -453,7 +453,7 @@ class TypeResolver(
 
         val argumentsFromUserType = resolveTypeProjections(c, typeConstructor, collectedArgumentAsTypeProjections)
         val (argumentsWithReplacedVariadics, typeArgumentsAnnotation) = replaceVariadicTypeArgumentsWithUpperBoundAndGenerateAnnotation(
-            parameters, argumentsFromUserType
+            parameters, argumentsFromUserType, c, element
         )
         val arguments = buildFinalArgumentList(argumentsWithReplacedVariadics, argumentsForOuterClass, parameters)
         val updatedAnnotations = if (typeArgumentsAnnotation != null)
@@ -822,16 +822,26 @@ class TypeResolver(
 
     private fun replaceVariadicTypeArgumentsWithUpperBoundAndGenerateAnnotation(
         typeParameters: List<TypeParameterDescriptor>,
-        typeArguments: List<TypeProjection>
+        typeArguments: List<TypeProjection>,
+        context: TypeResolutionContext,
+        element: KtElement
     ): Pair<List<TypeProjection>, AnnotationDescriptor?> {
         if (typeParameters.lastOrNull()?.isVariadic == true) {
-            val variadicProjections = if (typeArguments.size >= typeParameters.size)
-                typeArguments.subList(typeParameters.lastIndex, typeArguments.size)
-            else emptyList()
-            val typeArgumentsAnnotation = generateTypeArgumentsAnnotation(moduleDescriptor, variadicProjections.map { it.type.unwrap() })
             val replacedProjections = typeArguments.subList(0, typeParameters.lastIndex) + TypeProjectionImpl(
                 typeParameters.last().upperBounds.singleOrNull() ?: moduleDescriptor.builtIns.nullableAnyType
             )
+            val variadicProjections = if (typeArguments.size >= typeParameters.size)
+                typeArguments.subList(typeParameters.lastIndex, typeArguments.size)
+            else emptyList()
+            val starProjections = variadicProjections.filter { it.isStarProjection }
+            if (starProjections.size > 1 || starProjections.size == 1 && variadicProjections.size > 1) {
+                context.trace.report(Errors.VARIADIC_STAR_PROJECTION_MISUSE.on(element))
+                return Pair(replacedProjections, null)
+            }
+            val typesWithoutStarProjections = variadicProjections.mapNotNull { projection ->
+                projection.takeIf { !it.isStarProjection }?.type?.unwrap()
+            }
+            val typeArgumentsAnnotation = generateTypeArgumentsAnnotation(moduleDescriptor, typesWithoutStarProjections)
             return Pair(replacedProjections, typeArgumentsAnnotation)
         }
         return Pair(typeArguments, null)
@@ -863,11 +873,14 @@ class TypeResolver(
             ModifierCheckerCore.check(argumentElement, c.trace, null, languageVersionSettings)
             if (projectionKind == KtProjectionKind.STAR) {
                 val parameters = constructor.parameters
-                if (parameters.size > i) {
-                    val parameterDescriptor = parameters[i]
-                    TypeUtils.makeStarProjection(parameterDescriptor)
-                } else {
-                    TypeProjectionImpl(OUT_VARIANCE, ErrorUtils.createErrorType("*"))
+                val lastVariadic = parameters.lastOrNull()?.takeIf { it.isVariadic }
+                when {
+                    parameters.size > i -> {
+                        val parameterDescriptor = parameters[i]
+                        TypeUtils.makeStarProjection(parameterDescriptor)
+                    }
+                    lastVariadic != null -> TypeUtils.makeStarProjection(lastVariadic)
+                    else -> TypeProjectionImpl(OUT_VARIANCE, ErrorUtils.createErrorType("*"))
                 }
             } else {
                 val type = resolveType(c.noBareTypes(), argumentElement.typeReference!!)

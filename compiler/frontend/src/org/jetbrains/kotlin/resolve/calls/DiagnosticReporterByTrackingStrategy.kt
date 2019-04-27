@@ -10,6 +10,7 @@ import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.diagnostics.Errors.*
 import org.jetbrains.kotlin.diagnostics.Errors.BadNamedArgumentsTarget.INVOKE_ON_FUNCTION_TYPE
 import org.jetbrains.kotlin.diagnostics.Errors.BadNamedArgumentsTarget.NON_KOTLIN_FUNCTION
+import org.jetbrains.kotlin.diagnostics.reportDiagnosticOnce
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.resolve.BindingContext
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
@@ -240,6 +241,16 @@ class DiagnosticReporterByTrackingStrategy(
                         )
                     )
                 }
+            }
+
+            NotEnoughInformationForTypeParameter::class.java -> {
+                val error = diagnostic as NotEnoughInformationForTypeParameter
+                trace.reportDiagnosticOnce(
+                    NEW_INFERENCE_ERROR.on(
+                        psiKotlinCall.psiCall.callElement,
+                        "can't infer parameter ${error.typeVariable}"
+                    )
+                )
             }
         }
     }

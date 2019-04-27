@@ -15,9 +15,11 @@ import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.constants.ConstantValueFactory
 import org.jetbrains.kotlin.resolve.constants.KClassValue
 import org.jetbrains.kotlin.resolve.source.KotlinSourceElement
+import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.KotlinTypeFactory
 import org.jetbrains.kotlin.types.TypeProjectionImpl
 import org.jetbrains.kotlin.types.UnwrappedType
+import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 
 fun PropertyDescriptor.hasBackingField(bindingContext: BindingContext?): Boolean = when {
     kind == CallableMemberDescriptor.Kind.FAKE_OVERRIDE -> overriddenDescriptors.any { it.hasBackingField(bindingContext) }
@@ -59,4 +61,16 @@ fun generateTypeArgumentsAnnotation(
         mapOf(annotationArgName to constValForTypesArray),
         SourceElement.NO_SOURCE
     )
+}
+
+fun KotlinType.isTypeIndex() = annotations.hasAnnotation(FqName("kotlin.experimental.TypeIndex"))
+fun KotlinType.typeIndex() = annotations.findAnnotation(FqName("kotlin.experimental.TypeIndex"))
+fun AnnotationDescriptor.targetedTypeParameterOfTypeIndex(): KotlinType? {
+    assert(fqName == FqName("kotlin.experimental.TypeIndex")) { "Should only be called on @TypeIndex annotation" }
+    return allValueArguments.getValue(Name.identifier("targetType")).value.safeAs()
+}
+
+fun AnnotationDescriptor.targetedVariadicParameterOfTypeIndex(): KotlinType? {
+    assert(fqName == FqName("kotlin.experimental.TypeIndex")) { "Should only be called on @TypeIndex annotation" }
+    return allValueArguments.getValue(Name.identifier("variadicParameter")).value.safeAs()
 }

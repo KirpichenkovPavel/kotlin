@@ -162,16 +162,16 @@ internal object CreateFreshVariablesSubstitutor : ResolutionPart() {
             }
             typeArguments.forEach { typeArgument ->
                 if (typeArgument is SimpleTypeArgument) {
-                    if (!typeParameter.isVariadic) {
-                        csBuilder.addEqualityConstraint(
-                            freshVariable.defaultType,
-                            typeArgument.type,
-                            ExplicitTypeParameterConstraintPosition(typeArgument)
-                        )
-                    } else {
+                    if (typeParameter.isVariadic) {
                         csBuilder.addSubtypeConstraint(
                             typeArgument.type,
                             freshVariable.defaultType,
+                            ExplicitVariadicTypeArgumentConstraintPosition(typeArgument)
+                        )
+                    } else {
+                        csBuilder.addEqualityConstraint(
+                            freshVariable.defaultType,
+                            typeArgument.type,
                             ExplicitTypeParameterConstraintPosition(typeArgument)
                         )
                     }

@@ -3277,9 +3277,19 @@ public class DiagnosticsTestWithStdLibUsingJavacGenerated extends AbstractDiagno
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/emptyTuple.kt");
         }
 
+        @TestMetadata("extensionFunction.kt")
+        public void testExtensionFunction() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/extensionFunction.kt");
+        }
+
         @TestMetadata("genericTypeForVariadicGenericClass.kt")
         public void testGenericTypeForVariadicGenericClass() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/genericTypeForVariadicGenericClass.kt");
+        }
+
+        @TestMetadata("indexChain.kt")
+        public void testIndexChain() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/indexChain.kt");
         }
 
         @TestMetadata("inferTypeFromTuple.kt")
@@ -3320,6 +3330,11 @@ public class DiagnosticsTestWithStdLibUsingJavacGenerated extends AbstractDiagno
         @TestMetadata("spreadOperatorInTupleConstructor.kt")
         public void testSpreadOperatorInTupleConstructor() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/spreadOperatorInTupleConstructor.kt");
+        }
+
+        @TestMetadata("starProjection.kt")
+        public void testStarProjection() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/starProjection.kt");
         }
 
         @TestMetadata("tupleSum.kt")

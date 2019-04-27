@@ -28,7 +28,7 @@ import org.jetbrains.kotlin.types.UnwrappedType
 sealed class ConstraintPosition
 
 class ExplicitTypeParameterConstraintPosition(val typeArgument: SimpleTypeArgument) : ConstraintPosition() {
-    override fun toString() = "TypeParameter $typeArgument"
+    override fun toString() = "TypeParameter ${typeArgument.type}"
 }
 
 class ExpectedTypeConstraintPosition(val topLevelCall: KotlinCall) : ConstraintPosition() {
@@ -78,7 +78,7 @@ class VariadicTypeParameterConstraintPosition(val topLevelCall: KotlinCall) : Co
 }
 
 class ExplicitVariadicTypeArgumentConstraintPosition(val typeArgument: SimpleTypeArgument) : ConstraintPosition() {
-    override fun toString(): String = "Variadic type parameter constraint for $typeArgument"
+    override fun toString(): String = "Variadic type parameter constraint for ${typeArgument.type}"
 }
 
 @Deprecated("Should be used only in SimpleConstraintSystemImpl")

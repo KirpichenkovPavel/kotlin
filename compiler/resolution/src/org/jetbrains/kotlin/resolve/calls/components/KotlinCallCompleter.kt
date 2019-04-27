@@ -173,43 +173,26 @@ class KotlinCallCompleter(
 
     private fun KotlinResolutionCandidate.processTypeIndexes() {
         for ((parameter, argument) in typeIndexesFromResolvedCall()) {
-            val typeIndexAnnotation = parameter.type.annotations.findAnnotation(FqName("kotlin.experimental.TypeIndex"))!!
-            val type = typeIndexAnnotation.allValueArguments.getValue(Name.identifier("targetType")).value.safeAs<KotlinType>()
-                ?: continue
-            val typeVariableForAdditionalConstraint = resolvedCall.substitutor.freshVariables.firstOrNull { typeVariable ->
-                typeVariable.originalTypeParameter.defaultType.unwrap().constructor.declarationDescriptor?.name ==
-                        type.unwrap().constructor.declarationDescriptor?.name
+            val typeIndexAnnotation = parameter.type.typeIndexAnnotation()!!
+            val type = typeIndexAnnotation.targetedTypeParameterOfTypeIndex() ?: continue
+            val typeVariableForAdditionalConstraint = resolvedCall.substitutor.freshVariables.singleOrNull { typeVariable ->
+                /* TODO candidate descriptor and function descriptor are different instances (why?)
+                   Can't use equality check for types or descriptors.*/
+                typeVariable.originalTypeParameter.name == type.unwrap().constructor.declarationDescriptor?.name
             } ?: continue
-            val passedTypeIndexConstant = typeIndexArgumentIntegerValue(argument) ?: continue
-            val typeFromAnnotation = getTypeFromReceiverAnnotation(passedTypeIndexConstant) ?: continue
+            val indexArgumentType = argumentReceiverType(argument)
+            val typeForConstraint = indexArgumentType?.let { indexType ->
+                val indexTypeConstructor = indexType.constructor
+                when {
+                    indexTypeConstructor is IntegerValueTypeConstructor -> expectedTypeForIntegerIndex(indexTypeConstructor)
+                    indexType.isTypeIndex() -> expectedTypeForVariableIndex(indexType)
+                    else -> null
+                }
+            } ?: continue
             csBuilder.addEqualityConstraint(
                 typeVariableForAdditionalConstraint.defaultType,
-                typeFromAnnotation.unwrap(),
+                typeForConstraint.unwrap(),
                 VariadicTypeParameterConstraintPosition(resolvedCall.atom)
-            )
-        }
-    }
-
-    private fun KotlinResolutionCandidate.processExpectedType(expectedType: UnwrappedType?) {
-        val variadicTypeParameter = resolvedCall.candidateDescriptor.typeParameters.lastOrNull { it.isVariadic }
-        val typeArgumentsFromExpectedType = expectedType?.takeIf { !TypeUtils.noExpectedType(it) }
-            ?.annotations?.findAnnotation(FqName("kotlin.experimental.TypeArguments"))
-        if (variadicTypeParameter == null || typeArgumentsFromExpectedType == null)
-            return
-        val extractedTypeArguments = typeArgumentsFromExpectedType.allValueArguments[Name.identifier("types")]?.value
-            ?.safeAs<ArrayList<KClassValue>>()?.map { it.value.unwrap() } ?: return
-        val variadicTypeVariables = resolvedCall.substitutor.freshVariables
-            .mapNotNull { variable -> variable as? VariadicTypeVariableFromCallableDescriptor }
-            .filter { variable -> variable.originalTypeParameter == variadicTypeParameter }
-            .sortedBy { variable -> variable.index }
-        if (extractedTypeArguments.size == variadicTypeVariables.size) {
-            // TODO report diagnostic
-        }
-        variadicTypeVariables.zip(extractedTypeArguments).forEach { (variable, type) ->
-            csBuilder.addEqualityConstraint(
-                variable.defaultType,
-                type,
-                ExpectedTypeConstraintPosition(resolvedCall.atom)
             )
         }
     }
@@ -221,25 +204,68 @@ class KotlinCallCompleter(
             )
         }
 
-    private fun typeIndexArgumentIntegerValue(argument: ResolvedCallArgument): Int? =
-        argument.arguments.firstOrNull().safeAs<ExpressionKotlinCallArgument>()?.receiver?.receiverValue?.type?.constructor
-            ?.safeAs<IntegerValueTypeConstructor>()?.getValue()?.toInt()
+    private fun KotlinType.isTypeIndex() = annotations.hasAnnotation(FqName("kotlin.experimental.TypeIndex"))
+    private fun KotlinType.typeIndexAnnotation() = annotations.findAnnotation(FqName("kotlin.experimental.TypeIndex"))
+    private fun AnnotationDescriptor.targetedTypeParameterOfTypeIndex(): KotlinType? {
+        assert(fqName == FqName("kotlin.experimental.TypeIndex")) { "Should only be called on @TypeIndex annotation" }
+        return allValueArguments.getValue(Name.identifier("targetType")).value.safeAs()
+    }
 
-    private fun KotlinResolutionCandidate.getTypeArgumentsAnnotationFromReceiver(): AnnotationDescriptor? =
+    private fun AnnotationDescriptor.targetedVariadicParameterOfTypeIndex(): KotlinType? {
+        assert(fqName == FqName("kotlin.experimental.TypeIndex")) { "Should only be called on @TypeIndex annotation" }
+        return allValueArguments.getValue(Name.identifier("variadicParameter")).value.safeAs()
+    }
+
+    private fun KotlinResolutionCandidate.expectedTypeForIntegerIndex(argument: IntegerValueTypeConstructor): KotlinType? =
+        typeIndexArgumentIntegerValue(argument)?.let { typeFromReceiverAnnotation(it) }
+
+    private fun expectedTypeForVariableIndex(indexType: KotlinType): KotlinType? =
+        indexType.typeIndexAnnotation()?.targetedTypeParameterOfTypeIndex()
+
+    private fun argumentReceiverType(argument: ResolvedCallArgument): KotlinType? =
+        argument.arguments.singleOrNull().safeAs<ExpressionKotlinCallArgument>()?.receiver?.receiverValue?.type
+
+    private fun typeIndexArgumentIntegerValue(argument: IntegerValueTypeConstructor): Int? = argument.getValue().toInt()
+
+    private fun KotlinResolutionCandidate.typeArgumentsAnnotationFromReceiver(): AnnotationDescriptor? =
         resolvedCall.dispatchReceiverArgument?.receiver?.receiverValue?.originalReceiver()
             ?.type?.annotations?.findAnnotation(FqName("kotlin.experimental.TypeArguments"))
+
+    private fun KotlinResolutionCandidate.typeFromReceiverAnnotation(indexValueArgument: Int): KotlinType? {
+        val typeArgsAnnotation = typeArgumentsAnnotationFromReceiver() ?: return null
+        val typesArray = typeArgsAnnotation.allValueArguments.get(Name.identifier("types"))?.value
+        return typesArray.safeAs<ArrayList<KClassValue>>()?.getOrNull(indexValueArgument)?.value
+    }
+
+    private fun KotlinResolutionCandidate.processExpectedType(expectedType: UnwrappedType?) {
+        val variadicTypeParameter = resolvedCall.candidateDescriptor.typeParameters.lastOrNull()?.takeIf { it.isVariadic }
+        val typeArgumentsFromExpectedType = expectedType?.takeIf { !TypeUtils.noExpectedType(it) }
+            ?.annotations?.findAnnotation(FqName("kotlin.experimental.TypeArguments"))
+        if (variadicTypeParameter == null || typeArgumentsFromExpectedType == null)
+            return
+        val extractedTypeArguments = typeArgumentsFromExpectedType.allValueArguments[Name.identifier("types")]?.value
+            ?.safeAs<ArrayList<KClassValue>>()?.map { it.value.unwrap() } ?: return
+        val variadicTypeVariables = resolvedCall.substitutor.freshVariables
+            .mapNotNull { variable -> variable as? VariadicTypeVariableFromCallableDescriptor }
+            .filter { variable -> variable.originalTypeParameter == variadicTypeParameter }
+            .sortedBy { variable -> variable.index }
+        if (extractedTypeArguments.size != variadicTypeVariables.size) {
+            // TODO report diagnostic
+        }
+        variadicTypeVariables.zip(extractedTypeArguments).forEach { (variable, type) ->
+            csBuilder.addEqualityConstraint(
+                variable.defaultType,
+                type,
+                ExpectedTypeConstraintPosition(resolvedCall.atom)
+            )
+        }
+    }
 
     private fun ReceiverValue.originalReceiver(): ReceiverValue {
         var current = original
         while (current !== current.original)
             current = current.original
         return current
-    }
-
-    private fun KotlinResolutionCandidate.getTypeFromReceiverAnnotation(indexValueArgument: Int): KotlinType? {
-        val typeArgsAnnotation = getTypeArgumentsAnnotationFromReceiver() ?: return null
-        val typesArray = typeArgsAnnotation.allValueArguments.get(Name.identifier("types"))?.value
-        return typesArray.safeAs<ArrayList<KClassValue>>()?.getOrNull(indexValueArgument)?.value
     }
 
     fun KotlinResolutionCandidate.asCallResolutionResult(
