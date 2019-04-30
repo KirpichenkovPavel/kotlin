@@ -16,6 +16,7 @@ import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.resolve.constants.ConstantValueFactory
 import org.jetbrains.kotlin.resolve.constants.KClassValue
+import org.jetbrains.kotlin.resolve.scopes.receivers.ReceiverValue
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.KotlinTypeFactory
 import org.jetbrains.kotlin.types.UnwrappedType
@@ -71,3 +72,10 @@ fun AnnotationDescriptor.targetedVariadicParameterOfTypeIndex(): KotlinType? {
 
 private fun AnnotationDescriptor.getClassLiteralType(argName: Name) =
     allValueArguments[argName]?.value?.safeAs<KClassValue.Value.LocalClass>()?.type
+
+fun ReceiverValue.originalReceiver(): ReceiverValue {
+    var current = original
+    while (current !== current.original)
+        current = current.original
+    return current
+}

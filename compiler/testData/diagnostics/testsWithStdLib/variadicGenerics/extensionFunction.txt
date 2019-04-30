@@ -1,10 +1,10 @@
 package
 
 public fun test(): kotlin.Unit
-public fun </*0*/ T, /*1*/ Ts : T> @kotlin.experimental.TypeArguments(types = {Ts::class}) Tuple<kotlin.Any?>.asList(): kotlin.collections.List<T>
+public fun </*0*/ T, /*1*/ Ts : T> Tuple<Ts>.asList(): kotlin.collections.List<T>
 
-public final class Tuple</*0*/ T> {
-    public constructor Tuple</*0*/ T>(/*0*/ vararg values: T /*kotlin.Array<out T>*/)
+public final class Tuple</*0*/ Ts> {
+    public constructor Tuple</*0*/ Ts>(/*0*/ vararg values: Ts /*kotlin.Array<out Ts>*/)
     private final val _values: kotlin.Array<kotlin.Any?>
     public final fun asValuesList(): kotlin.collections.List<kotlin.Any?>
     public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean

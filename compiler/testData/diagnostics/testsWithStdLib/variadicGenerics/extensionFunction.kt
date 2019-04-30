@@ -17,4 +17,9 @@ fun test() {
     val list2 = tuple.asList()
     val list3 = tuple.asList<Number, Double, Int>()
     val list4 = Tuple(143, "baz").asList()
+
+    val floats = list2.map { it.toFloat() }
+    val notFloats = list4.map {
+        it.<!DEBUG_INFO_UNRESOLVED_WITH_TARGET, UNRESOLVED_REFERENCE_WRONG_RECEIVER!>toFloat<!>()
+    }
 }

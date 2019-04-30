@@ -1,6 +1,6 @@
 package
 
-public val test: @kotlin.experimental.TypeArguments(types = {kotlin.Int::class, kotlin.String::class}) Variadic<kotlin.Any?>
+public val test: @kotlin.experimental.TypeArguments(types = {Int::class, String::class}) Variadic<kotlin.Any?>
 
 public final class Variadic</*0*/ Ts> {
     public constructor Variadic</*0*/ Ts>()

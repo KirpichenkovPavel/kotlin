@@ -18,10 +18,7 @@ import org.jetbrains.kotlin.resolve.calls.inference.model.VariadicTypeParameterC
 import org.jetbrains.kotlin.resolve.calls.inference.model.VariadicTypeVariableFromCallableDescriptor
 import org.jetbrains.kotlin.resolve.calls.model.*
 import org.jetbrains.kotlin.resolve.calls.tower.forceResolution
-import org.jetbrains.kotlin.resolve.calls.util.isTypeIndex
-import org.jetbrains.kotlin.resolve.calls.util.targetedTypeParameterOfTypeIndex
-import org.jetbrains.kotlin.resolve.calls.util.typeArgumentsAnnotation
-import org.jetbrains.kotlin.resolve.calls.util.typeIndexAnnotation
+import org.jetbrains.kotlin.resolve.calls.util.*
 import org.jetbrains.kotlin.resolve.constants.IntegerLiteralTypeConstructor
 import org.jetbrains.kotlin.resolve.constants.IntegerValueTypeConstructor
 import org.jetbrains.kotlin.resolve.constants.KClassValue
@@ -55,6 +52,7 @@ class KotlinCallCompleter(
 
         candidate.addExpectedTypeConstraint(returnType, expectedType, resolutionCallbacks)
         candidate.addExpectedTypeFromCastConstraint(returnType, resolutionCallbacks)
+        candidate.addConstraintsForVariadicGenerics(expectedType)
 
         return if (resolutionCallbacks.inferenceSession.shouldRunCompletion(candidate))
             candidate.runCompletion(
@@ -190,7 +188,6 @@ class KotlinCallCompleter(
         expectedType: UnwrappedType?,
         currentReturnType: UnwrappedType?
     ): ConstraintSystemCompletionMode {
-        addConstraintsForVariadicGenerics(expectedType)
         // Presence of expected type means that we trying to complete outermost call => completion mode should be full
         if (expectedType != null) return ConstraintSystemCompletionMode.FULL
 
@@ -296,8 +293,6 @@ class KotlinCallCompleter(
         val typesArray = typeArgsAnnotation.allValueArguments[Name.identifier("types")]?.value
         val kClassValueByIndex = typesArray.safeAs<ArrayList<KClassValue>>()?.getOrNull(indexValueArgument)
         return kClassValueByIndex?.getArgumentType(resolvedCall.candidateDescriptor.module)
-        //return kClassWrapper?.arguments?.singleOrNull()?.type
-//            ?.safeAs<KClassValue>()?.getType(resolvedCall.candidateDescriptor.module)
     }
 
     private fun KotlinResolutionCandidate.processExpectedType(expectedType: UnwrappedType?) {
@@ -308,7 +303,7 @@ class KotlinCallCompleter(
             return
         val extractedTypeArguments = typeArgumentsFromExpectedType.allValueArguments[Name.identifier("types")]?.value
             ?.safeAs<ArrayList<KClassValue>>()?.mapNotNull {
-                it.value.safeAs<KClassValue>()?.getType(resolvedCall.candidateDescriptor.module)?.unwrap()
+                it.getArgumentType(resolvedCall.candidateDescriptor.module).unwrap()
             } ?: return
         val variadicTypeVariables = resolvedCall.substitutor.freshVariables
             .mapNotNull { variable -> variable as? VariadicTypeVariableFromCallableDescriptor }
@@ -324,13 +319,6 @@ class KotlinCallCompleter(
                 ExpectedTypeConstraintPosition(resolvedCall.atom)
             )
         }
-    }
-
-    private fun ReceiverValue.originalReceiver(): ReceiverValue {
-        var current = original
-        while (current !== current.original)
-            current = current.original
-        return current
     }
 
     fun KotlinResolutionCandidate.asCallResolutionResult(

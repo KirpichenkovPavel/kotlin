@@ -33,6 +33,7 @@ import org.jetbrains.kotlin.resolve.calls.model.*
 import org.jetbrains.kotlin.resolve.calls.tasks.ExplicitReceiverKind
 import org.jetbrains.kotlin.resolve.constants.KClassValue
 import org.jetbrains.kotlin.resolve.calls.tower.NewResolvedCallImpl
+import org.jetbrains.kotlin.resolve.calls.util.originalReceiver
 import org.jetbrains.kotlin.resolve.calls.util.typeArgumentsAnnotation
 import org.jetbrains.kotlin.resolve.descriptorUtil.module
 import org.jetbrains.kotlin.resolve.scopes.receivers.ExpressionReceiver
@@ -78,13 +79,6 @@ fun <D : CallableDescriptor> ResolvedCall<D>.usesDefaultArguments(): Boolean {
     return valueArgumentsByIndex?.any { it is DefaultValueArgument } ?: false
 }
 
-private fun ReceiverValue.originalReceiver(): ReceiverValue {
-    var current = original
-    while (current !== current.original)
-        current = current.original
-    return current
-}
-
 fun ResolvedCall<*>.getVariadicTypeArgsFromDispatchReceiver(): List<KotlinType>? {
     val result: MutableList<KotlinType> = emptyList().toMutableList()
     if (explicitReceiverKind == ExplicitReceiverKind.DISPATCH_RECEIVER) {
@@ -92,8 +86,8 @@ fun ResolvedCall<*>.getVariadicTypeArgsFromDispatchReceiver(): List<KotlinType>?
         val typeArgsAnnotation = dispatchReceiverType.typeArgumentsAnnotation() ?: return null
         val typesList = typeArgsAnnotation.allValueArguments[Name.identifier("types")]?.value.safeAs<ArrayList<KClassValue>>()
             ?: return null
-        typesList.mapNotNullTo(result) { type ->
-            type.safeAs<KClassValue>()?.getArgumentType(module = candidateDescriptor.module)
+        typesList.mapTo(result) { type ->
+            type.getArgumentType(module = candidateDescriptor.module)
         }
     }
     return result.toList()

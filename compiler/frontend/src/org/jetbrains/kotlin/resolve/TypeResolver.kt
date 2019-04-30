@@ -821,7 +821,8 @@ class TypeResolver(
         context: TypeResolutionContext,
         element: KtElement
     ): Pair<List<TypeProjection>, AnnotationDescriptor?> {
-        if (typeParameters.lastOrNull()?.isVariadic == true) {
+        val lastParameter = typeParameters.lastOrNull()
+        if (lastParameter?.isVariadic == true && !isBypassedVariadicTypeArgument(typeArguments.singleOrNull())) {
             val replacedProjections = typeArguments.subList(0, typeParameters.lastIndex) + TypeProjectionImpl(
                 typeParameters.last().upperBounds.singleOrNull() ?: moduleDescriptor.builtIns.nullableAnyType
             )
@@ -840,6 +841,11 @@ class TypeResolver(
             return Pair(replacedProjections, typeArgumentsAnnotation)
         }
         return Pair(typeArguments, null)
+    }
+
+    private fun isBypassedVariadicTypeArgument(projection: TypeProjection?): Boolean {
+        if (projection == null) return false
+        return projection.type.constructor.declarationDescriptor?.safeAs<TypeParameterDescriptor>()?.isVariadic ?: false
     }
 
     /**

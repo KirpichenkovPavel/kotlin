@@ -13,6 +13,6 @@ fun test () {
     val first: Int = tuple[0]
     val second: String = tuple[1]
     val wrongType: Double = <!TYPE_MISMATCH, TYPE_MISMATCH!>tuple[0]<!>
-    <!UNREACHABLE_CODE!>val third: Nothing =<!> tuple[<!VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS!>2<!>]
+    <!UNREACHABLE_CODE!>val third: Nothing =<!> <!IMPLICIT_NOTHING_AS_TYPE_PARAMETER!>tuple[<!VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS!>2<!>]<!>
 }
 
