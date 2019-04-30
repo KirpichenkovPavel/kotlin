@@ -54,7 +54,11 @@ dependencies {
     testRuntime(project(":kotlinx-serialization-ide-plugin"))
 
     testRuntime(intellijPluginDep("android"))
-    testRuntime(intellijPluginDep("smali"))
+
+    if (Platform[181].orHigher()) {
+        testRuntime(intellijPluginDep("smali"))
+    }
+
     testRuntime(intellijPluginDep("copyright"))
     testRuntime(intellijPluginDep("coverage"))
     testRuntime(intellijPluginDep("gradle"))
@@ -63,24 +67,29 @@ dependencies {
     testRuntime(intellijPluginDep("java-decompiler"))
     testRuntime(intellijPluginDep("java-i18n"))
     testRuntime(intellijPluginDep("junit"))
-    testRuntime(intellijPluginDep("maven"))
+
+    Ide.IJ {
+        testRuntime(intellijPluginDep("maven"))
+    }
+
     testRuntime(intellijPluginDep("testng"))
 }
 
 sourceSets {
-    "main" { projectDefault() }
-    "test" { projectDefault() }
+    if (Ide.AS33.orHigher() || Ide.IJ191.orHigher()) {
+        "main" { }
+        "test" { }
+    } else {
+        "main" { projectDefault() }
+        "test" { projectDefault() }
+    }
 }
 
-projectTest {
+projectTest(parallel = true) {
     workingDir = rootDir
     useAndroidSdk()
 }
 
-testsJar {}
+testsJar()
 
-runtimeJar {
-    archiveName = "android-ide.jar"
-}
-
-ideaPlugin()
+runtimeJar()

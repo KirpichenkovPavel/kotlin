@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle.plugin.mpp
@@ -37,7 +37,8 @@ object KotlinUsages {
 
     internal fun producerApiUsage(target: KotlinTarget) = target.project.usageByName(
         when (target.platformType) {
-            in jvmPlatformTypes -> JAVA_API
+            in jvmPlatformTypes ->
+                if (isGradleVersionAtLeast(5, 3)) "java-api-jars" else JAVA_API
             else -> KOTLIN_API
         }
     )
@@ -54,9 +55,10 @@ object KotlinUsages {
         // is 'java-runtime-jars'. This rule tells Gradle that Kotlin consumers can consume plain old JARs:
         override fun execute(details: CompatibilityCheckDetails<Usage>) = with(details) {
             when {
-                consumerValue?.name == KOTLIN_API && producerValue?.name == JAVA_API -> compatible()
-                consumerValue?.name in values &&
-                        producerValue?.name.let { it == JAVA_RUNTIME || it == JAVA_RUNTIME_JARS } -> compatible()
+                consumerValue?.name == KOTLIN_API && producerValue?.name.let { it == JAVA_API || it == "java-api-jars" } ->
+                    compatible()
+                consumerValue?.name in values && producerValue?.name.let { it == JAVA_RUNTIME || it == JAVA_RUNTIME_JARS } ->
+                    compatible()
             }
         }
     }
@@ -65,29 +67,39 @@ object KotlinUsages {
         override fun execute(details: MultipleCandidatesDetails<Usage?>) = with(details) {
             val candidateNames = candidateValues.map { it?.name }.toSet()
 
+            fun chooseCandidateByName(name: String?): Unit = closestMatch(candidateValues.single { it?.name == name }!!)
+
             // if both API and runtime artifacts are chosen according to the compatibility rules, then
             // the consumer requested nothing specific, so provide them with the runtime variant, which is more complete:
             if (candidateNames.filterNotNull().toSet() == setOf(KOTLIN_RUNTIME, KOTLIN_API)) {
-                details.closestMatch(candidateValues.single { it?.name == KOTLIN_RUNTIME }!!)
+                chooseCandidateByName(KOTLIN_RUNTIME)
             }
-            if (JAVA_API in candidateNames && JAVA_RUNTIME_JARS in candidateNames && values.none { it in candidateNames }) {
-                details.closestMatch(candidateValues.single { it?.name == JAVA_RUNTIME_JARS }!!)
+
+            val javaApiUsages = setOf(JAVA_API, "java-api-jars")
+            val javaRuntimeUsages = setOf(JAVA_RUNTIME_JARS, JAVA_RUNTIME)
+
+            if (javaApiUsages.any { it in candidateNames } &&
+                javaRuntimeUsages.any { it in candidateNames } &&
+                values.none { it in candidateNames }
+            ) {
+                when (consumerValue?.name) {
+                    KOTLIN_API, in javaApiUsages ->
+                        chooseCandidateByName(javaApiUsages.first { it in candidateNames })
+                    null, KOTLIN_RUNTIME, in javaRuntimeUsages ->
+                        chooseCandidateByName(javaRuntimeUsages.first { it in candidateNames })
+                }
             }
-            if (JAVA_API in candidateNames && JAVA_RUNTIME in candidateNames && values.none { it in candidateNames }) {
-                details.closestMatch(candidateValues.single { it?.name == JAVA_RUNTIME }!!)
-            }
+
             if (JAVA_RUNTIME_CLASSES in candidateNames && JAVA_RUNTIME_RESOURCES in candidateNames && KOTLIN_RUNTIME in candidateNames) {
-                closestMatch(candidateValues.single { it?.name == KOTLIN_RUNTIME }!!)
+                chooseCandidateByName(KOTLIN_RUNTIME)
             }
         }
     }
 
     internal fun setupAttributesMatchingStrategy(attributesSchema: AttributesSchema) {
-        if (isGradleVersionAtLeast(4, 0)) {
-            attributesSchema.attribute(Usage.USAGE_ATTRIBUTE) { strategy ->
-                strategy.compatibilityRules.add(KotlinJavaRuntimeJarsCompatibility::class.java)
-                strategy.disambiguationRules.add(KotlinUsagesDisambiguation::class.java)
-            }
+        attributesSchema.attribute(Usage.USAGE_ATTRIBUTE) { strategy ->
+            strategy.compatibilityRules.add(KotlinJavaRuntimeJarsCompatibility::class.java)
+            strategy.disambiguationRules.add(KotlinUsagesDisambiguation::class.java)
         }
     }
 }

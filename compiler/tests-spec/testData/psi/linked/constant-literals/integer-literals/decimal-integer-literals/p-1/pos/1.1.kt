@@ -1,11 +1,10 @@
 /*
- KOTLIN PSI SPEC TEST (POSITIVE)
-
- SECTIONS: constant-literals, integer-literals, decimal-integer-literals
- PARAGRAPH: 1
- SENTENCE: [1] A sequence of decimal digit symbols (0 though 9) is a decimal integer literal.
- NUMBER: 1
- DESCRIPTION: Sequences with decimal digit symbols.
+ * KOTLIN PSI SPEC TEST (POSITIVE)
+ *
+ * SPEC VERSION: 0.1-draft
+ * PLACE: constant-literals, integer-literals, decimal-integer-literals -> paragraph 1 -> sentence 1
+ * NUMBER: 1
+ * DESCRIPTION: Sequences with decimal digit symbols.
  */
 
 val value = 1234567890

@@ -17,10 +17,12 @@
 package org.jetbrains.kotlin.compilerRunner
 
 import com.intellij.util.xmlb.XmlSerializerUtil
+import org.jetbrains.annotations.TestOnly
 import org.jetbrains.jps.api.GlobalOptions
 import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.common.KOTLIN_COMPILER_ENVIRONMENT_KEEPALIVE_PROPERTY
 import org.jetbrains.kotlin.cli.common.arguments.*
+import org.jetbrains.kotlin.cli.common.messages.MessageCollectorUtil
 import org.jetbrains.kotlin.config.CompilerSettings
 import org.jetbrains.kotlin.config.IncrementalCompilation
 import org.jetbrains.kotlin.config.additionalArgumentsAsList
@@ -32,8 +34,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.PrintStream
 
-class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
-    override val log: KotlinLogger = JpsKotlinLogger(KotlinBuilder.LOG)
+class JpsKotlinCompilerRunner {
+    private val log: KotlinLogger = JpsKotlinLogger(KotlinBuilder.LOG)
 
     private var compilerSettings: CompilerSettings? = null
 
@@ -51,16 +53,22 @@ class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
         @Volatile
         private var _jpsCompileServiceSession: CompileServiceSession? = null
 
+        @TestOnly
+        fun releaseCompileServiceSession() {
+            _jpsCompileServiceSession?.let {
+                try {
+                    it.compileService.releaseCompileSession(it.sessionId)
+                } catch (_: Throwable) {
+                }
+            }
+            _jpsCompileServiceSession = null
+        }
+
         @Synchronized
         private fun getOrCreateDaemonConnection(newConnection: () -> CompileServiceSession?): CompileServiceSession? {
             // TODO: consider adding state "ping" to the daemon interface
             if (_jpsCompileServiceSession == null || _jpsCompileServiceSession!!.compileService.getDaemonOptions() !is CompileService.CallResult.Good<DaemonOptions>) {
-                _jpsCompileServiceSession?.let {
-                    try {
-                        it.compileService.releaseCompileSession(it.sessionId)
-                    } catch (_: Throwable) {
-                    }
-                }
+                releaseCompileServiceSession()
                 _jpsCompileServiceSession = newConnection()
             }
 
@@ -105,7 +113,7 @@ class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
         arguments.destination = arguments.destination ?: destination
 
         withCompilerSettings(compilerSettings) {
-            runCompiler(K2METADATA_COMPILER, arguments, environment)
+            runCompiler(KotlinCompilerClass.METADATA, arguments, environment)
         }
     }
 
@@ -119,7 +127,7 @@ class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
         val arguments = mergeBeans(commonArguments, XmlSerializerUtil.createCopy(k2jvmArguments))
         setupK2JvmArguments(moduleFile, arguments)
         withCompilerSettings(compilerSettings) {
-            runCompiler(K2JVM_COMPILER, arguments, environment)
+            runCompiler(KotlinCompilerClass.JVM, arguments, environment)
         }
     }
 
@@ -149,32 +157,41 @@ class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
         log.debug("K2JS: arguments after setup" + ArgumentUtils.convertArgumentsToStringList(arguments))
 
         withCompilerSettings(compilerSettings) {
-            runCompiler(K2JS_COMPILER, arguments, environment)
+            runCompiler(KotlinCompilerClass.JS, arguments, environment)
         }
     }
 
-    override fun compileWithDaemonOrFallback(
+    private fun compileWithDaemonOrFallback(
         compilerClassName: String,
         compilerArgs: CommonCompilerArguments,
         environment: JpsCompilerEnvironment
-    ): ExitCode {
+    ) {
         log.debug("Using kotlin-home = " + environment.kotlinPaths.homePath)
 
-        return withDaemonOrFallback(
+        withDaemonOrFallback(
             withDaemon = { compileWithDaemon(compilerClassName, compilerArgs, environment) },
             fallback = { fallbackCompileStrategy(compilerArgs, compilerClassName, environment) }
         )
     }
 
-    override fun compileWithDaemon(
+    private fun runCompiler(compilerClassName: String, compilerArgs: CommonCompilerArguments, environment: JpsCompilerEnvironment) {
+        try {
+            compileWithDaemonOrFallback(compilerClassName, compilerArgs, environment)
+        } catch (e: Throwable) {
+            MessageCollectorUtil.reportException(environment.messageCollector, e)
+            reportInternalCompilerError(environment.messageCollector)
+        }
+    }
+
+    private fun compileWithDaemon(
         compilerClassName: String,
         compilerArgs: CommonCompilerArguments,
         environment: JpsCompilerEnvironment
-    ): ExitCode? {
+    ): Int? {
         val targetPlatform = when (compilerClassName) {
-            K2JVM_COMPILER -> CompileService.TargetPlatform.JVM
-            K2JS_COMPILER -> CompileService.TargetPlatform.JS
-            K2METADATA_COMPILER -> CompileService.TargetPlatform.METADATA
+            KotlinCompilerClass.JVM -> CompileService.TargetPlatform.JVM
+            KotlinCompilerClass.JS -> CompileService.TargetPlatform.JS
+            KotlinCompilerClass.METADATA -> CompileService.TargetPlatform.METADATA
             else -> throw IllegalArgumentException("Unknown compiler type $compilerClassName")
         }
         val compilerMode = CompilerMode.JPS_COMPILER
@@ -197,7 +214,7 @@ class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
                     null
                 )
             }
-        }?.let { exitCodeFromProcessExitCode(it) }
+        }
     }
 
     private fun <T> withDaemonOrFallback(withDaemon: () -> T?, fallback: () -> T): T =
@@ -253,9 +270,9 @@ class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
         compilerArgs: CommonCompilerArguments,
         compilerClassName: String,
         environment: JpsCompilerEnvironment
-    ): ExitCode {
+    ) {
         if ("true" == System.getProperty("kotlin.jps.tests") && "true" == System.getProperty(FAIL_ON_FALLBACK_PROPERTY)) {
-            error("Fallback strategy is disabled in tests!")
+            error("Cannot compile with Daemon, see logs bellow. Fallback strategy is disabled in tests")
         }
 
         // otherwise fallback to in-process
@@ -278,8 +295,7 @@ class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
         // exec() returns an ExitCode object, class of which is loaded with a different class loader,
         // so we take it's contents through reflection
         val exitCode = ExitCode.valueOf(getReturnCodeFromObject(rc))
-        processCompilerOutput(environment, stream, exitCode)
-        return exitCode
+        processCompilerOutput(environment.messageCollector, environment.outputItemsCollector, stream, exitCode)
     }
 
     private fun setupK2JvmArguments(moduleFile: File, settings: K2JVMCompilerArguments) {
@@ -312,12 +328,12 @@ class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
     }
 
     private fun getReturnCodeFromObject(rc: Any?): String = when {
-        rc == null -> INTERNAL_ERROR
+        rc == null -> ExitCode.INTERNAL_ERROR.toString()
         ExitCode::class.java.name == rc::class.java.name -> rc.toString()
         else -> throw IllegalStateException("Unexpected return: " + rc)
     }
 
-    override fun getDaemonConnection(environment: JpsCompilerEnvironment): CompileServiceSession? =
+    private fun getDaemonConnection(environment: JpsCompilerEnvironment): CompileServiceSession? =
         getOrCreateDaemonConnection {
             environment.progressReporter.progress("connecting to daemon")
             val libPath = CompilerRunnerUtil.getLibPath(environment.kotlinPaths, environment.messageCollector)
@@ -334,7 +350,15 @@ class JpsKotlinCompilerRunner : KotlinCompilerRunner<JpsCompilerEnvironment>() {
 
             environment.withProgressReporter { progress ->
                 progress.progress("connecting to daemon")
-                newDaemonConnection(compilerId, clientFlagFile, sessionFlagFile, environment, daemonOptions, additionalJvmParams.toTypedArray())
+                KotlinCompilerRunnerUtils.newDaemonConnection(
+                    compilerId,
+                    clientFlagFile,
+                    sessionFlagFile,
+                    environment.messageCollector,
+                    log.isDebugEnabled,
+                    daemonOptions,
+                    additionalJvmParams.toTypedArray()
+                )
             }
         }
 }

@@ -37,7 +37,7 @@ import org.jetbrains.kotlin.idea.caches.project.*
 import org.jetbrains.kotlin.idea.project.getLanguageVersionSettings
 import org.jetbrains.kotlin.idea.project.languageVersionSettings
 import org.jetbrains.kotlin.idea.project.platform
-import org.jetbrains.kotlin.script.KotlinScriptDefinition
+import org.jetbrains.kotlin.scripting.definitions.KotlinScriptDefinition
 import org.jetbrains.kotlin.utils.Jsr305State
 
 object IDELanguageSettingsProvider : LanguageSettingsProvider {
@@ -97,7 +97,7 @@ private fun getLanguageSettingsForScripts(project: Project, scriptDefinition: Ko
             val compilerArguments = K2JVMCompilerArguments()
             parseCommandLineArguments(args.toList(), compilerArguments)
             // TODO: reporting
-            val verSettings = compilerArguments.configureLanguageVersionSettings(MessageCollector.NONE)
+            val verSettings = compilerArguments.toLanguageVersionSettings(MessageCollector.NONE)
             val jvmTarget = compilerArguments.jvmTarget?.let { JvmTarget.fromString(it) } ?: TargetPlatformVersion.NoVersion
             ScriptLanguageSettings(verSettings, jvmTarget)
         }.also { scriptDefinition.putUserData(SCRIPT_LANGUAGE_SETTINGS, it) }

@@ -28,7 +28,6 @@ import com.intellij.refactoring.MoveDestination
 import com.intellij.refactoring.PackageWrapper
 import com.intellij.refactoring.RefactoringBundle
 import com.intellij.refactoring.copy.CopyFilesOrDirectoriesDialog
-import com.intellij.refactoring.move.moveClassesOrPackages.DestinationFolderComboBox
 import com.intellij.refactoring.ui.PackageNameReferenceEditorCombo
 import com.intellij.ui.EditorTextField
 import com.intellij.ui.RecentsManager
@@ -41,6 +40,7 @@ import org.jetbrains.annotations.NonNls
 import org.jetbrains.kotlin.idea.core.getPackage
 import org.jetbrains.kotlin.idea.refactoring.Pass
 import org.jetbrains.kotlin.idea.refactoring.hasIdentifiersOnly
+import org.jetbrains.kotlin.idea.refactoring.ui.KotlinDestinationFolderComboBox
 import org.jetbrains.kotlin.idea.util.sourceRoot
 import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.psi.KtNamedDeclaration
@@ -49,6 +49,7 @@ import java.awt.Font
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
+import kotlin.math.max
 
 // Based on com.intellij.refactoring.copy.CopyClassDialog
 class CopyKotlinDeclarationDialog(
@@ -61,7 +62,7 @@ class CopyKotlinDeclarationDialog(
     private val packageLabel = JLabel()
     private lateinit var packageNameField: ReferenceEditorComboWithBrowseButton
     private val openInEditorCheckBox = CopyFilesOrDirectoriesDialog.createOpenInEditorCB()
-    private val destinationComboBox = object : DestinationFolderComboBox() {
+    private val destinationComboBox = object : KotlinDestinationFolderComboBox() {
         override fun getTargetPackage() = packageNameField.text.trim()
         override fun reportBaseInTestSelectionInSource() = true
     }
@@ -97,7 +98,7 @@ class CopyKotlinDeclarationDialog(
     override fun createNorthPanel(): JComponent? {
         val qualifiedName = qualifiedName
         packageNameField = PackageNameReferenceEditorCombo(qualifiedName, project, RECENTS_KEY, RefactoringBundle.message("choose.destination.package"))
-        packageNameField.setTextFieldPreferredWidth(Math.max(qualifiedName.length + 5, 40))
+        packageNameField.setTextFieldPreferredWidth(max(qualifiedName.length + 5, 40))
         packageLabel.text = RefactoringBundle.message("destination.package")
         packageLabel.labelFor = packageNameField
 

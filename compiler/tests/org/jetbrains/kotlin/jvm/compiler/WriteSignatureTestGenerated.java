@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2019 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.jvm.compiler;
@@ -197,6 +197,11 @@ public class WriteSignatureTestGenerated extends AbstractWriteSignatureTest {
         @TestMetadata("propertyReferenceGet.kt")
         public void testPropertyReferenceGet() throws Exception {
             runTest("compiler/testData/writeSignature/callableReference/propertyReferenceGet.kt");
+        }
+
+        @TestMetadata("suspendFunctionReference.kt")
+        public void testSuspendFunctionReference() throws Exception {
+            runTest("compiler/testData/writeSignature/callableReference/suspendFunctionReference.kt");
         }
     }
 

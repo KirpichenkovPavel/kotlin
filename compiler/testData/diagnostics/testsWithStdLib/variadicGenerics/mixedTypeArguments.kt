@@ -14,5 +14,5 @@ fun test() {
     val tuple = Tuple<Int, String, Double, Byte>(2, "3", 4.0, 5)
     val val1: Double = tuple.get(0)
     val val2: Byte = tuple.get(1)
-    <!UNREACHABLE_CODE!>val val3 =<!> tuple.get(<!VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS!>2<!>)
+    val val3 = tuple.<!NEW_INFERENCE_NO_INFORMATION_FOR_PARAMETER!>get<!>(<!VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS!>2<!>)
 }

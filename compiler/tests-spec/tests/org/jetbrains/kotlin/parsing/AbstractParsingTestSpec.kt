@@ -1,33 +1,39 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.parsing
 
+import com.intellij.openapi.util.io.FileUtil
+import org.jetbrains.kotlin.TestExceptionsComparator
+import org.jetbrains.kotlin.spec.parsers.CommonParser
 import org.jetbrains.kotlin.spec.validators.*
 import org.junit.Assert
+import java.io.File
 
 abstract class AbstractParsingTestSpec : AbstractParsingTest() {
-    private lateinit var testValidator: AbstractSpecTestValidator<out AbstractSpecTest>
-
     override fun doParsingTest(filePath: String) {
-        testValidator = AbstractSpecTestValidator.getInstanceByType(filePath)
+        val file = File(filePath)
+        val (specTest, testLinkedType) = CommonParser.parseSpecTest(
+            filePath,
+            mapOf("main.kt" to FileUtil.loadFile(file, true))
+        )
 
-        try {
-            testValidator.parseTestInfo()
-        } catch (e: SpecTestValidationException) {
-            Assert.fail(e.description)
+        println(specTest)
+
+        if (specTest.exception == null) {
+            super.doParsingTest(filePath, CommonParser::testInfoFilter)
+        } else {
+            TestExceptionsComparator(file).run(specTest.exception) {
+                super.doParsingTest(filePath, CommonParser::testInfoFilter)
+            }
         }
 
-        testValidator.printTestInfo()
-
-        super.doParsingTest(filePath, testValidator::testInfoFilter)
-
-        if (testValidator.testInfo.unexpectedBehavior!!) return
-
         try {
-            testValidator.validateTestType(computedTestType = ParsingTestTypeValidator.computeTestType(myFile))
+            val psiTestValidator = ParsingTestTypeValidator(myFile, File(filePath), specTest)
+            psiTestValidator.validatePathConsistency(testLinkedType)
+            psiTestValidator.validateTestType()
         } catch (e: SpecTestValidationException) {
             Assert.fail(e.description)
         }

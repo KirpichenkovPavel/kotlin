@@ -20,6 +20,7 @@ import org.jetbrains.kotlin.descriptors.CallableMemberDescriptor
 import org.jetbrains.kotlin.descriptors.PropertyAccessorDescriptor
 import org.jetbrains.kotlin.ir.declarations.IrSimpleFunction
 import org.jetbrains.kotlin.ir.descriptors.IrBuiltIns
+import org.jetbrains.kotlin.ir.symbols.IrSimpleFunctionSymbol
 import org.jetbrains.kotlin.lexer.KtSingleValueToken
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.resolve.DescriptorUtils
@@ -30,11 +31,15 @@ class IrIntrinsicMethods(irBuiltIns: IrBuiltIns) {
 
     val intrinsics = IntrinsicMethods()
 
+    val andandSymbol = irBuiltIns.run { defineOperator(OperatorNames.ANDAND, bool, listOf(bool, bool)) }
+
+    private val andand = andandSymbol.descriptor
+
     private val irMapping = hashMapOf<CallableMemberDescriptor, IntrinsicMethod>()
 
-    private fun createPrimitiveComparisonIntrinsics(typeToIrFun: Map<SimpleType, IrSimpleFunction>, operator: KtSingleValueToken) {
-        for ((type, irFun) in typeToIrFun) {
-            irMapping[irFun.descriptor] = PrimitiveComparison(type, operator)
+    private fun createPrimitiveComparisonIntrinsics(typeToIrFun: Map<SimpleType, IrSimpleFunctionSymbol>, operator: KtSingleValueToken) {
+        for ((type, irFunSymbol) in typeToIrFun) {
+            irMapping[irFunSymbol.descriptor] = PrimitiveComparison(type, operator)
         }
     }
 
@@ -54,6 +59,8 @@ class IrIntrinsicMethods(irBuiltIns: IrBuiltIns) {
         irMapping[irBuiltIns.noWhenBranchMatchedException] = IrNoWhenBranchMatchedException()
         irMapping[irBuiltIns.illegalArgumentException] = IrIllegalArgumentException()
         irMapping[irBuiltIns.throwNpe] = ThrowNPE()
+
+        irMapping[andand] = AndAnd
     }
 
     fun getIntrinsic(descriptor: CallableMemberDescriptor): IntrinsicMethod? {
@@ -62,5 +69,9 @@ class IrIntrinsicMethods(irBuiltIns: IrBuiltIns) {
             return intrinsics.getIntrinsic(DescriptorUtils.unwrapFakeOverride(descriptor.correspondingProperty))
         }
         return irMapping[descriptor.original]
+    }
+
+    private object OperatorNames {
+        const val ANDAND = "ANDAND"
     }
 }

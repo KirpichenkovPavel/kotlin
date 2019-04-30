@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 import org.gradle.api.Project
@@ -24,6 +24,7 @@ val mirroredUrls = listOf(
     "https://jetbrains.bintray.com/markdown",
     "https://jetbrains.bintray.com/teamcity-rest-client",
     "https://jetbrains.bintray.com/test-discovery",
+    "https://jetbrains.bintray.com/jediterm",
     "https://jitpack.io",
     "https://maven.exasol.com/artifactory/exasol-releases",
     "https://plugins.gradle.org/m2",
@@ -35,7 +36,12 @@ val mirroredUrls = listOf(
     "https://services.gradle.org",
     "https://www.jetbrains.com/intellij-repository",
     "https://www.myget.org/F/intellij-go-snapshots/maven",
-    "https://www.myget.org/F/rd-snapshots/maven"
+    "https://www.myget.org/F/rd-snapshots/maven",
+    "https://www.myget.org/F/rd-model-snapshots/maven",
+    "https://www.python.org/ftp",
+    "https://dl.google.com/dl/android/studio/ide-zips",
+    "https://dl.bintray.com/kotlin/ktor",
+    "https://cdn.azul.com/zulu/bin"
 )
 
 fun URI.toCacheRedirectorUri() = URI("https://cache-redirector.jetbrains.com/$host/$path")

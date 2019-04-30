@@ -17,11 +17,11 @@
 package org.jetbrains.kotlin.android.synthetic.idea
 
 import org.jetbrains.kotlin.android.synthetic.AndroidConst
-import org.jetbrains.kotlin.android.synthetic.descriptors.AndroidSyntheticPackageFragmentDescriptor
 import org.jetbrains.kotlin.android.synthetic.descriptors.PredefinedPackageFragmentDescriptor
 import org.jetbrains.kotlin.descriptors.CallableDescriptor
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.idea.core.extension.KotlinIndicesHelperExtension
+import org.jetbrains.kotlin.incremental.components.LookupLocation
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.resolve.scopes.DescriptorKindFilter
 import org.jetbrains.kotlin.resolve.scopes.MemberScope
@@ -29,12 +29,12 @@ import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.typeUtil.isSubtypeOf
 
 class AndroidIndicesHelperExtension : KotlinIndicesHelperExtension {
-
     override fun appendExtensionCallables(
-            consumer: MutableList<in CallableDescriptor>,
-            moduleDescriptor: ModuleDescriptor,
-            receiverTypes: Collection<KotlinType>,
-            nameFilter: (String) -> Boolean
+        consumer: MutableList<in CallableDescriptor>,
+        moduleDescriptor: ModuleDescriptor,
+        receiverTypes: Collection<KotlinType>,
+        nameFilter: (String) -> Boolean,
+        lookupLocation: LookupLocation
     ) {
         for (packageFragment in moduleDescriptor.getPackage(FqName(AndroidConst.SYNTHETIC_PACKAGE)).fragments) {
             if (packageFragment !is PredefinedPackageFragmentDescriptor) continue
@@ -50,10 +50,19 @@ class AndroidIndicesHelperExtension : KotlinIndicesHelperExtension {
             }
 
             handleScope(packageFragment.getMemberScope())
-            for (fragment in packageFragment.subpackages) {
-                if (fragment is AndroidSyntheticPackageFragmentDescriptor && fragment.packageData.isDeprecated) continue
-                handleScope(fragment.getMemberScope())
+            for (fragment in packageFragment.lazySubpackages) {
+                if (fragment.isDeprecated) continue
+                handleScope(fragment.descriptor().getMemberScope())
             }
         }
+    }
+
+    override fun appendExtensionCallables(
+        consumer: MutableList<in CallableDescriptor>,
+        moduleDescriptor: ModuleDescriptor,
+        receiverTypes: Collection<KotlinType>,
+        nameFilter: (String) -> Boolean
+    ) {
+        throw IllegalStateException("Should not be called")
     }
 }

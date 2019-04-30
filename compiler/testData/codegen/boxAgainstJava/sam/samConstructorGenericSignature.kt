@@ -1,4 +1,5 @@
-// IGNORE_BACKEND: JVM_IR
+// SKIP_JDK6
+// WITH_RUNTIME
 // FILE: JavaClass.java
 
 class JavaClass {

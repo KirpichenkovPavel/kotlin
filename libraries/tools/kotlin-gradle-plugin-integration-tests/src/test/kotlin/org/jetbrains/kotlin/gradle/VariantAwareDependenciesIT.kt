@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle
@@ -73,7 +73,24 @@ class VariantAwareDependenciesIT : BaseGradleIT() {
         val outerProject = Project("sample-lib", gradleVersion, "new-mpp-lib-and-app")
         val innerProject = Project("simpleProject").apply {
             setupWorkingDir()
-            gradleBuildScript().modify { it.replace("apply plugin: \"kotlin\"", "") }
+            gradleBuildScript().modify {
+                it.replace("apply plugin: \"kotlin\"", "")
+                    .replace("\"org.jetbrains.kotlin:kotlin-stdlib\"", "\"org.jetbrains.kotlin:kotlin-stdlib:\$kotlin_version\"")
+            }
+
+            if (testGradleVersionAtLeast("5.3-rc-1")) {
+                gradleBuildScript().appendText(
+                    // In Gradle 5.3, the variants of a Kotlin MPP can't be disambiguated in a pure Java project's deprecated
+                    // configurations that don't have a proper 'org.gradle.usage' attribute value, see KT-30378
+                    "\n" + """
+                    configurations {
+                        configure([compile, runtime, testCompile, testRuntime, getByName('default')]) {
+                            canBeResolved = false
+                        }
+                    }
+                    """.trimIndent()
+                )
+            }
         }
 
         with(outerProject) {
@@ -190,9 +207,11 @@ class VariantAwareDependenciesIT : BaseGradleIT() {
                     group 'com.example.oldmpp'
                     version '1.0'
                     apply plugin: 'maven-publish'
-                    publishing {
-                        repositories { maven { url "file://${'$'}{rootDir.absolutePath.replace('\\', '/')}/repo" } }
-                        publications { kotlin(MavenPublication) { from(components.java) } }
+                    afterEvaluate {
+                        publishing {
+                            repositories { maven { url "file://${'$'}{rootDir.absolutePath.replace('\\', '/')}/repo" } }
+                            publications { kotlin(MavenPublication) { from(components.java) } }
+                        }
                     }
                 }
             """.trimIndent()
@@ -225,6 +244,12 @@ class VariantAwareDependenciesIT : BaseGradleIT() {
     }
 
     @Test
+    fun testJvmWithJavaProjectCanBeResolvedInAllConfigurations() =
+        with(Project("new-mpp-jvm-with-java-multi-module", GradleVersionRequired.AtLeast("4.7"))) {
+            testResolveAllConfigurations("app")
+        }
+
+    @Test
     fun testConfigurationsWithNoExplicitUsageResolveRuntime() =
     // Starting with Gradle 5.0, plain Maven dependencies are represented as two variants, and resolving them to the API one leads
     // to transitive dependencies left out of the resolution results. We need to ensure that our attributes schema does not lead to the API
@@ -238,6 +263,30 @@ class VariantAwareDependenciesIT : BaseGradleIT() {
 
                 // Check that the transitive dependencies with 'runtime' scope are also available:
                 assertContains(">> :compile --> kotlin-script-runtime-${defaultBuildOptions().kotlinVersion}.jar")
+            }
+        }
+
+    @Test
+    fun testCompileAndRuntimeResolutionOfElementsConfigurations() =
+        with(Project("sample-app", gradleVersion, "new-mpp-lib-and-app")) {
+            val libProject = Project("sample-lib", gradleVersion, "new-mpp-lib-and-app")
+            embedProject(libProject)
+            gradleBuildScript().modify {
+                it.replace("'com.example:sample-lib:1.0'", "project('${libProject.projectName}')")
+            }
+
+            listOf("jvm6" to "Classpath", "nodeJs" to "Classpath", "wasm32" to "Klibraries").forEach { (target, suffix) ->
+                build("dependencyInsight", "--configuration", "${target}Compile$suffix", "--dependency", "sample-lib") {
+                    assertSuccessful()
+                    assertContains("variant \"${target}ApiElements\" [")
+                }
+
+                if (suffix == "Classpath") {
+                    build("dependencyInsight", "--configuration", "${target}Runtime$suffix", "--dependency", "sample-lib") {
+                        assertSuccessful()
+                        assertContains("variant \"${target}RuntimeElements\" [")
+                    }
+                }
             }
         }
 

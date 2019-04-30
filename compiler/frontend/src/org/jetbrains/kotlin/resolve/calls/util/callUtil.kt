@@ -32,6 +32,9 @@ import org.jetbrains.kotlin.resolve.calls.context.ResolutionContext
 import org.jetbrains.kotlin.resolve.calls.model.*
 import org.jetbrains.kotlin.resolve.calls.tasks.ExplicitReceiverKind
 import org.jetbrains.kotlin.resolve.constants.KClassValue
+import org.jetbrains.kotlin.resolve.calls.tower.NewResolvedCallImpl
+import org.jetbrains.kotlin.resolve.calls.util.typeArgumentsAnnotation
+import org.jetbrains.kotlin.resolve.descriptorUtil.module
 import org.jetbrains.kotlin.resolve.scopes.receivers.ExpressionReceiver
 import org.jetbrains.kotlin.resolve.scopes.receivers.ReceiverValue
 import org.jetbrains.kotlin.types.KotlinType
@@ -86,13 +89,12 @@ fun ResolvedCall<*>.getVariadicTypeArgsFromDispatchReceiver(): List<KotlinType>?
     val result: MutableList<KotlinType> = emptyList().toMutableList()
     if (explicitReceiverKind == ExplicitReceiverKind.DISPATCH_RECEIVER) {
         val dispatchReceiverType = dispatchReceiver?.originalReceiver()?.type ?: return null
-        val typeArgsAnnotation = dispatchReceiverType.annotations.findAnnotation(
-            FqName("kotlin.experimental.TypeArguments")
-        )
-            ?: return null
+        val typeArgsAnnotation = dispatchReceiverType.typeArgumentsAnnotation() ?: return null
         val typesList = typeArgsAnnotation.allValueArguments[Name.identifier("types")]?.value.safeAs<ArrayList<KClassValue>>()
             ?: return null
-        typesList.mapTo(result) { type -> type.value }
+        typesList.mapNotNullTo(result) { type ->
+            type.safeAs<KClassValue>()?.getArgumentType(module = candidateDescriptor.module)
+        }
     }
     return result.toList()
 }
@@ -104,8 +106,10 @@ fun <C : ResolutionContext<C>> Call.hasUnresolvedArguments(context: ResolutionCo
     return arguments.any(fun(argument: KtExpression?): Boolean {
         if (argument == null || ArgumentTypeResolver.isFunctionLiteralOrCallableReference(argument, context)) return false
 
-        val resolvedCall = argument.getResolvedCall(context.trace.bindingContext) as MutableResolvedCall<*>?
-        if (resolvedCall != null && !resolvedCall.hasInferredReturnType()) return false
+        when (val resolvedCall = argument.getResolvedCall(context.trace.bindingContext)) {
+            is MutableResolvedCall<*> -> if (!resolvedCall.hasInferredReturnType()) return false
+            is NewResolvedCallImpl<*> -> if (resolvedCall.resultingDescriptor.returnType?.isError == true) return false
+        }
 
         val expressionType = context.trace.bindingContext.getType(argument)
         return expressionType == null || expressionType.isError

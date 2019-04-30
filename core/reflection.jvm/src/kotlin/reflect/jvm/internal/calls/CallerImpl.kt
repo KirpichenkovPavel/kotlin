@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlin.reflect.jvm.internal.calls
@@ -52,6 +52,32 @@ internal sealed class CallerImpl<out M : Member>(
         override fun call(args: Array<*>): Any? {
             checkArguments(args)
             return member.newInstance(boundReceiver, *args)
+        }
+    }
+
+    class AccessorForHiddenConstructor(
+        constructor: ReflectConstructor<*>
+    ) : CallerImpl<ReflectConstructor<*>>(
+        constructor, constructor.declaringClass, null,
+        constructor.genericParameterTypes.dropLast()
+    ) {
+        override fun call(args: Array<*>): Any? {
+            checkArguments(args)
+            return member.newInstance(*args, null)
+        }
+    }
+
+    class AccessorForHiddenBoundConstructor(
+        constructor: ReflectConstructor<*>,
+        private val boundReceiver: Any?
+    ) : CallerImpl<ReflectConstructor<*>>(
+        constructor, constructor.declaringClass,
+        null,
+        constructor.genericParameterTypes.dropFirstAndLast()
+    ), BoundCaller {
+        override fun call(args: Array<*>): Any? {
+            checkArguments(args)
+            return member.newInstance(boundReceiver, *args, null)
         }
     }
 
@@ -211,5 +237,13 @@ internal sealed class CallerImpl<out M : Member>(
         @Suppress("UNCHECKED_CAST")
         inline fun <reified T> Array<out T>.dropFirst(): Array<T> =
             if (size <= 1) emptyArray() else copyOfRange(1, size) as Array<T>
+
+        @Suppress("UNCHECKED_CAST")
+        inline fun <reified T> Array<out T>.dropLast(): Array<T> =
+            if (size <= 1) emptyArray() else copyOfRange(0, size - 1) as Array<T>
+
+        @Suppress("UNCHECKED_CAST")
+        inline fun <reified T> Array<out T>.dropFirstAndLast(): Array<T> =
+            if (size <= 2) emptyArray() else copyOfRange(1, size - 1) as Array<T>
     }
 }

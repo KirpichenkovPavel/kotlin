@@ -1,10 +1,11 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen;
 
+import kotlin.Unit;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.backend.common.FunctionsFromAnyGenerator;
@@ -19,6 +20,7 @@ import org.jetbrains.kotlin.lexer.KtTokens;
 import org.jetbrains.kotlin.psi.KtClassOrObject;
 import org.jetbrains.kotlin.resolve.BindingContext;
 import org.jetbrains.kotlin.resolve.InlineClassesUtilsKt;
+import org.jetbrains.kotlin.resolve.descriptorUtil.DescriptorUtilsKt;
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin;
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOriginKt;
 import org.jetbrains.kotlin.types.KotlinType;
@@ -96,7 +98,7 @@ public class FunctionsFromAnyGeneratorImpl extends FunctionsFromAnyGenerator {
         boolean first = true;
         for (PropertyDescriptor propertyDescriptor : properties) {
             if (first) {
-                iv.aconst(classDescriptor.getName() + "(" + propertyDescriptor.getName().asString()+"=");
+                iv.aconst(classDescriptor.getName() + "(" + propertyDescriptor.getName().asString() + "=");
                 first = false;
             }
             else {
@@ -106,21 +108,22 @@ public class FunctionsFromAnyGeneratorImpl extends FunctionsFromAnyGenerator {
 
             JvmKotlinType type = genOrLoadOnStack(iv, context, propertyDescriptor, 0);
             Type asmType = type.getType();
+            KotlinType kotlinType = type.getKotlinType();
 
             if (asmType.getSort() == Type.ARRAY) {
                 Type elementType = correctElementType(asmType);
                 if (elementType.getSort() == Type.OBJECT || elementType.getSort() == Type.ARRAY) {
                     iv.invokestatic("java/util/Arrays", "toString", "([Ljava/lang/Object;)Ljava/lang/String;", false);
                     asmType = JAVA_STRING_TYPE;
+                    kotlinType = DescriptorUtilsKt.getBuiltIns(function).getStringType();
                 }
-                else {
-                    if (elementType.getSort() != Type.CHAR) {
-                        iv.invokestatic("java/util/Arrays", "toString", "(" + asmType.getDescriptor() + ")Ljava/lang/String;", false);
-                        asmType = JAVA_STRING_TYPE;
-                    }
+                else if (elementType.getSort() != Type.CHAR) {
+                    iv.invokestatic("java/util/Arrays", "toString", "(" + asmType.getDescriptor() + ")Ljava/lang/String;", false);
+                    asmType = JAVA_STRING_TYPE;
+                    kotlinType = DescriptorUtilsKt.getBuiltIns(function).getStringType();
                 }
             }
-            genInvokeAppendMethod(iv, asmType, type.getKotlinType(), typeMapper);
+            genInvokeAppendMethod(iv, asmType, kotlinType, typeMapper);
         }
 
         iv.aconst(")");
@@ -237,23 +240,32 @@ public class FunctionsFromAnyGeneratorImpl extends FunctionsFromAnyGenerator {
             KotlinType kotlinType = propertyDescriptor.getReturnType();
             Type asmType = typeMapper.mapType(kotlinType);
 
-            JvmKotlinType thisPropertyType = genOrLoadOnStack(iv,context, propertyDescriptor, 0);
-            StackValue.coerce(thisPropertyType.getType(), thisPropertyType.getKotlinType(), asmType, kotlinType, iv);
-
-            JvmKotlinType otherPropertyType = genOrLoadOnStack(iv,context, propertyDescriptor, storedValueIndex);
-            StackValue.coerce(otherPropertyType.getType(), otherPropertyType.getKotlinType(), asmType, kotlinType, iv);
+            StackValue thisPropertyValue = StackValue.operation(asmType, kotlinType, (InstructionAdapter iiv) -> {
+                JvmKotlinType thisPropertyType = genOrLoadOnStack(iiv, context, propertyDescriptor, 0);
+                StackValue.coerce(thisPropertyType.getType(), thisPropertyType.getKotlinType(), asmType, kotlinType, iiv);
+                return Unit.INSTANCE;
+            });
+            StackValue otherPropertyValue = StackValue.operation(asmType, kotlinType, (InstructionAdapter iiv) -> {
+                JvmKotlinType otherPropertyType = genOrLoadOnStack(iiv, context, propertyDescriptor, storedValueIndex);
+                StackValue.coerce(otherPropertyType.getType(), otherPropertyType.getKotlinType(), asmType, kotlinType, iiv);
+                return Unit.INSTANCE;
+            });
 
             if (asmType.getSort() == Type.FLOAT) {
+                thisPropertyValue.put(asmType, kotlinType, iv);
+                otherPropertyValue.put(asmType, kotlinType, iv);
                 iv.invokestatic("java/lang/Float", "compare", "(FF)I", false);
                 iv.ifne(ne);
             }
             else if (asmType.getSort() == Type.DOUBLE) {
+                thisPropertyValue.put(asmType, kotlinType, iv);
+                otherPropertyValue.put(asmType, kotlinType, iv);
                 iv.invokestatic("java/lang/Double", "compare", "(DD)I", false);
                 iv.ifne(ne);
             }
             else {
                 StackValue value = genEqualsForExpressionsOnStack(
-                        KtTokens.EQEQ, StackValue.onStack(asmType, kotlinType), StackValue.onStack(asmType, kotlinType)
+                        KtTokens.EQEQ, thisPropertyValue, otherPropertyValue
                 );
                 value.put(Type.BOOLEAN_TYPE, iv);
                 iv.ifeq(ne);

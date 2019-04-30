@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea
@@ -29,6 +29,7 @@ class KotlinPairMatcher : PairedBraceMatcher {
             // KotlinTypedHandler insert paired brace in this case
             false
         } else KtTokens.WHITE_SPACE_OR_COMMENT_BIT_SET.contains(contextType)
+                || contextType === KtTokens.COLON
                 || contextType === KtTokens.SEMICOLON
                 || contextType === KtTokens.COMMA
                 || contextType === KtTokens.RPAR

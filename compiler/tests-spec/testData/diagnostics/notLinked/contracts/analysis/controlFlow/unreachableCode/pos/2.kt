@@ -1,16 +1,16 @@
 // !USE_EXPERIMENTAL: kotlin.contracts.ExperimentalContracts
-// !WITH_CONTRACT_FUNCTIONS
 // SKIP_TXT
 
 /*
- KOTLIN DIAGNOSTICS NOT LINKED SPEC TEST (POSITIVE)
-
- SECTION: contracts
- CATEGORIES: analysis, controlFlow, unreachableCode
- NUMBER: 2
- DESCRIPTION: Check for lack of unreachable code report when 'at most once' and 'unknown' invokations in CallsInPlace effect used.
+ * KOTLIN DIAGNOSTICS NOT LINKED SPEC TEST (POSITIVE)
+ *
+ * SECTIONS: contracts, analysis, controlFlow, unreachableCode
+ * NUMBER: 2
+ * DESCRIPTION: Check for lack of unreachable code report when 'at most once' and 'unknown' invokations in CallsInPlace effect used.
+ * HELPERS: contractFunctions
  */
 
+// TESTCASE NUMBER: 1
 fun case_1() {
     funWithAtMostOnceCallsInPlace {
         throw Exception()
@@ -21,6 +21,7 @@ fun case_1() {
     println("1")
 }
 
+// TESTCASE NUMBER: 2
 fun case_2() {
     funWithUnknownCallsInPlace {
         throw Exception()
@@ -31,6 +32,7 @@ fun case_2() {
     println("1")
 }
 
+// TESTCASE NUMBER: 3
 fun case_3() {
     funWithExactlyOnceCallsInPlace {
         return@funWithExactlyOnceCallsInPlace
@@ -53,6 +55,7 @@ fun case_3() {
     println("1")
 }
 
+// TESTCASE NUMBER: 4
 fun case_4() {
     funWithAtLeastOnceCallsInPlace {
         return@funWithAtLeastOnceCallsInPlace

@@ -1,29 +1,24 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.codeInsight.gradle
 
 import com.intellij.openapi.extensions.Extensions
-import com.intellij.openapi.fileEditor.FileDocumentManager
-import com.intellij.openapi.fileEditor.impl.LoadTextUtil
 import com.intellij.openapi.module.ModuleManager
 import com.intellij.openapi.roots.DependencyScope
 import com.intellij.openapi.roots.ExternalLibraryDescriptor
-import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.testFramework.runInEdtAndWait
 import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.idea.configuration.*
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
 import org.jetbrains.kotlin.idea.util.application.runReadAction
-import org.jetbrains.kotlin.test.KotlinTestUtils
-import org.jetbrains.kotlin.test.testFramework.runInEdtAndWait
 import org.jetbrains.kotlin.test.testFramework.runWriteAction
+import org.jetbrains.plugins.gradle.execution.test.runner.GradleTestRunConfigurationProducer
 import org.jetbrains.plugins.gradle.tooling.annotation.TargetVersions
-import org.jetbrains.plugins.gradle.util.GradleConstants
 import org.junit.Assert
 import org.junit.Test
-import java.io.File
 
 class GradleConfiguratorTest : GradleImportingTestCase() {
 
@@ -334,6 +329,14 @@ class GradleConfiguratorTest : GradleImportingTestCase() {
     }
 
     @Test
+    fun testTestTasksAreImported() {
+        importProjectFromTestData()
+
+        val testTasks = GradleTestRunConfigurationProducer.getTasksToRun(myTestFixture.module)
+        assertTrue("There should be at least one test task", testTasks.isNotEmpty())
+    }
+
+    @Test
     fun testAddNonKotlinLibraryGSK() {
         val files = importProjectFromTestData()
 
@@ -581,6 +584,22 @@ class GradleConfiguratorTest : GradleImportingTestCase() {
         }
     }
 
+    @TargetVersions("4.7+")
+    @Test
+    fun testDisableFeatureSupportMultiplatform() {
+        val files = importProjectFromTestData()
+
+        runInEdtAndWait {
+            myTestFixture.project.executeWriteCommand("") {
+                KotlinWithGradleConfigurator.changeFeatureConfiguration(
+                    myTestFixture.module, LanguageFeature.InlineClasses, LanguageFeature.State.DISABLED, false
+                )
+            }
+
+            checkFiles(files)
+        }
+    }
+
     @Test
     fun testEnableFeatureSupport() {
         val files = importProjectFromTestData()
@@ -656,33 +675,7 @@ class GradleConfiguratorTest : GradleImportingTestCase() {
         }
     }
 
-    private fun importProjectFromTestData(): List<VirtualFile> {
-        val files = configureByFiles()
-        importProject()
-        return files
-    }
-
     override fun testDataDirName(): String {
         return "configurator"
-    }
-
-    private fun checkFiles(files: List<VirtualFile>) {
-        FileDocumentManager.getInstance().saveAllDocuments()
-
-        files.filter {
-            it.name == GradleConstants.DEFAULT_SCRIPT_NAME
-                    || it.name == GradleConstants.KOTLIN_DSL_SCRIPT_NAME
-                    || it.name == GradleConstants.SETTINGS_FILE_NAME
-        }
-            .forEach {
-                if (it.name == GradleConstants.SETTINGS_FILE_NAME && !File(testDataDirectory(), it.name + SUFFIX).exists()) return@forEach
-                val actualText = LoadTextUtil.loadText(it).toString()
-                val expectedFileName = if (File(testDataDirectory(), it.name + ".$gradleVersion" + SUFFIX).exists()) {
-                    it.name + ".$gradleVersion" + SUFFIX
-                } else {
-                    it.name + SUFFIX
-                }
-                KotlinTestUtils.assertEqualsToFile(File(testDataDirectory(), expectedFileName), actualText)
-            }
     }
 }

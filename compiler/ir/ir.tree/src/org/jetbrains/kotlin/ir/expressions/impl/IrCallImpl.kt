@@ -17,14 +17,13 @@
 package org.jetbrains.kotlin.ir.expressions.impl
 
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
+import org.jetbrains.kotlin.descriptors.ConstructorDescriptor
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.ir.expressions.IrCall
 import org.jetbrains.kotlin.ir.expressions.IrStatementOrigin
 import org.jetbrains.kotlin.ir.expressions.typeParametersCount
 import org.jetbrains.kotlin.ir.symbols.IrClassSymbol
 import org.jetbrains.kotlin.ir.symbols.IrFunctionSymbol
-import org.jetbrains.kotlin.ir.symbols.impl.createClassSymbolOrNull
-import org.jetbrains.kotlin.ir.symbols.impl.createFunctionSymbol
 import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.visitors.IrElementVisitor
 
@@ -35,16 +34,23 @@ class IrCallImpl(
     override val symbol: IrFunctionSymbol,
     override val descriptor: FunctionDescriptor,
     typeArgumentsCount: Int,
+    valueArgumentsCount: Int,
     origin: IrStatementOrigin? = null,
     override val superQualifierSymbol: IrClassSymbol? = null
 ) :
     IrCallWithIndexedArgumentsBase(
         startOffset, endOffset, type,
         typeArgumentsCount,
-        symbol.descriptor.valueParameters.size,
+        valueArgumentsCount,
         origin
     ),
     IrCall {
+
+    init {
+        if (descriptor is ConstructorDescriptor) {
+            throw AssertionError("Should be IrConstructorCall: $descriptor")
+        }
+    }
 
     constructor(
         startOffset: Int,
@@ -54,25 +60,23 @@ class IrCallImpl(
         descriptor: FunctionDescriptor,
         origin: IrStatementOrigin? = null,
         superQualifierSymbol: IrClassSymbol? = null
-    ) : this(startOffset, endOffset, type, symbol, descriptor, descriptor.typeParametersCount, origin, superQualifierSymbol)
+    ) : this(
+        startOffset, endOffset, type, symbol, descriptor, descriptor.typeParametersCount,
+        descriptor.valueParameters.size, origin, superQualifierSymbol
+    )
 
-    @Deprecated("Creates unbound symbols")
     constructor(
         startOffset: Int,
         endOffset: Int,
         type: IrType,
+        symbol: IrFunctionSymbol,
         descriptor: FunctionDescriptor,
         typeArgumentsCount: Int,
         origin: IrStatementOrigin? = null,
-        superQualifierDescriptor: ClassDescriptor? = null
+        superQualifierSymbol: IrClassSymbol? = null
     ) : this(
-        startOffset, endOffset,
-        type,
-        createFunctionSymbol(descriptor),
-        descriptor,
-        typeArgumentsCount,
-        origin,
-        createClassSymbolOrNull(superQualifierDescriptor)
+        startOffset, endOffset, type, symbol, descriptor, typeArgumentsCount,
+        descriptor.valueParameters.size, origin, superQualifierSymbol
     )
 
     constructor(startOffset: Int, endOffset: Int, type: IrType, symbol: IrFunctionSymbol) :

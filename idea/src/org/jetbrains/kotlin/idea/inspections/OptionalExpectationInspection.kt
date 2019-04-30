@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.inspections
@@ -21,7 +21,7 @@ import org.jetbrains.kotlin.psi.classOrObjectVisitor
 import org.jetbrains.kotlin.psi.psiUtil.hasExpectModifier
 import org.jetbrains.kotlin.resolve.MultiTargetPlatform
 import org.jetbrains.kotlin.resolve.checkers.ExpectedActualDeclarationChecker
-import org.jetbrains.kotlin.resolve.checkers.ExpectedActualDeclarationChecker.allStrongIncompatibilities
+import org.jetbrains.kotlin.resolve.checkers.ExpectedActualDeclarationChecker.Companion.allStrongIncompatibilities
 import org.jetbrains.kotlin.resolve.descriptorUtil.module
 import org.jetbrains.kotlin.resolve.getMultiTargetPlatform
 import org.jetbrains.kotlin.resolve.multiplatform.ExpectedActualResolver

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.jps.targets
@@ -27,11 +27,11 @@ import org.jetbrains.kotlin.incremental.ChangesCollector
 import org.jetbrains.kotlin.incremental.ExpectActualTrackerImpl
 import org.jetbrains.kotlin.incremental.components.ExpectActualTracker
 import org.jetbrains.kotlin.incremental.components.LookupTracker
+import org.jetbrains.kotlin.jps.build.*
 import org.jetbrains.kotlin.jps.incremental.CacheAttributesDiff
+import org.jetbrains.kotlin.jps.incremental.JpsIncrementalCache
 import org.jetbrains.kotlin.jps.incremental.loadDiff
 import org.jetbrains.kotlin.jps.incremental.localCacheVersionManager
-import org.jetbrains.kotlin.jps.build.*
-import org.jetbrains.kotlin.jps.incremental.JpsIncrementalCache
 import org.jetbrains.kotlin.jps.model.productionOutputFilePath
 import org.jetbrains.kotlin.jps.model.testOutputFilePath
 import org.jetbrains.kotlin.modules.TargetId
@@ -80,7 +80,7 @@ abstract class KotlinModuleBuildTarget<BuildMetaInfoType : BuildMetaInfo> intern
     val isTests: Boolean
         get() = jpsModuleBuildTarget.isTests
 
-    val targetId: TargetId
+    open val targetId: TargetId
         get() {
             // Since IDEA 2016 each gradle source root is imported as a separate module.
             // One gradle module X is imported as two JPS modules:
@@ -246,13 +246,17 @@ abstract class KotlinModuleBuildTarget<BuildMetaInfoType : BuildMetaInfo> intern
     }
 
     open fun updateCaches(
+        dirtyFilesHolder: KotlinDirtySourceFilesHolder,
         jpsIncrementalCache: JpsIncrementalCache,
         files: List<GeneratedFile>,
         changesCollector: ChangesCollector,
         environment: JpsCompilerEnvironment
     ) {
+        val changedAndRemovedFiles = dirtyFilesHolder.getDirtyFiles(jpsModuleBuildTarget).keys +
+                dirtyFilesHolder.getRemovedFiles(jpsModuleBuildTarget)
         val expectActualTracker = environment.services[ExpectActualTracker::class.java] as ExpectActualTrackerImpl
-        jpsIncrementalCache.registerComplementaryFiles(expectActualTracker)
+
+        jpsIncrementalCache.updateComplementaryFiles(changedAndRemovedFiles, expectActualTracker)
     }
 
     open fun makeServices(

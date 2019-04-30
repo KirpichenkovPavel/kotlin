@@ -26,6 +26,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
+import com.intellij.openapi.ui.popup.IPopupChooserBuilder
 import com.intellij.openapi.ui.popup.PopupChooserBuilder
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.PsiClass
@@ -37,8 +38,8 @@ import org.jetbrains.kotlin.asJava.toLightMethods
 import org.jetbrains.kotlin.descriptors.CallableMemberDescriptor
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.ClassKind
-import org.jetbrains.kotlin.idea.caches.resolve.util.getJavaClassDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.resolveToDescriptorIfAny
+import org.jetbrains.kotlin.idea.caches.resolve.util.getJavaClassDescriptor
 import org.jetbrains.kotlin.idea.core.overrideImplement.OverrideImplementMembersHandler
 import org.jetbrains.kotlin.idea.core.overrideImplement.OverrideMemberChooserObject
 import org.jetbrains.kotlin.idea.refactoring.isAbstract
@@ -126,7 +127,7 @@ abstract class ImplementAbstractMemberIntentionBase :
         val chooserObject = OverrideMemberChooserObject.create(member.project,
                                                                descriptorToImplement,
                                                                descriptorToImplement,
-                                                               OverrideMemberChooserObject.BodyType.EMPTY,
+                                                               OverrideMemberChooserObject.BodyType.FROM_TEMPLATE,
                                                                preferConstructorParameters)
         OverrideImplementMembersHandler.generateMembers(editor, targetClass, listOf(chooserObject), false)
     }
@@ -214,17 +215,17 @@ abstract class ImplementAbstractMemberIntentionBase :
             cellRenderer = renderer
         }
         val builder = PopupChooserBuilder<PsiElement>(list)
-        renderer.installSpeedSearch(builder)
+        renderer.installSpeedSearch(builder as IPopupChooserBuilder<*>)
         builder
-                .setTitle(CodeInsightBundle.message("intention.implement.abstract.method.class.chooser.title"))
-                .setItemChoosenCallback {
-                    val index = list.selectedIndex
-                    if (index < 0) return@setItemChoosenCallback
-                    @Suppress("UNCHECKED_CAST")
-                    implementInClass(element, list.selectedValues.toList() as List<KtClassOrObject>)
-                }
-                .createPopup()
-                .showInBestPositionFor(editor)
+            .setTitle(CodeInsightBundle.message("intention.implement.abstract.method.class.chooser.title"))
+            .setItemChoosenCallback {
+                val index = list.selectedIndex
+                if (index < 0) return@setItemChoosenCallback
+                @Suppress("UNCHECKED_CAST")
+                implementInClass(element, list.selectedValues.toList() as List<KtClassOrObject>)
+            }
+            .createPopup()
+            .showInBestPositionFor(editor)
     }
 }
 

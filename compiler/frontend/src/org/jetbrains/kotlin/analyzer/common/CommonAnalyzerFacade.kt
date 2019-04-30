@@ -52,7 +52,7 @@ class CommonAnalysisParameters(
 
 /**
  * A facade that is used to analyze common (platform-independent) modules in multi-platform projects.
- * See [TargetPlatform.Common]
+ * See [CommonPlatform]
  */
 object CommonAnalyzerFacade : ResolverForModuleFactory() {
     private class SourceModuleInfo(
@@ -86,7 +86,6 @@ object CommonAnalyzerFacade : ResolverForModuleFactory() {
             ProjectContext(project),
             listOf(moduleInfo),
             modulesContent = { ModuleContent(it, files, GlobalSearchScope.allScope(project)) },
-            modulePlatforms = { MultiTargetPlatform.Common },
             moduleLanguageSettingsProvider = object : LanguageSettingsProvider {
                 override fun getLanguageVersionSettings(
                     moduleInfo: ModuleInfo,
@@ -176,5 +175,5 @@ object CommonAnalyzerFacade : ResolverForModuleFactory() {
     }
 
     override val targetPlatform: TargetPlatform
-        get() = TargetPlatform.Common
+        get() = CommonPlatform
 }

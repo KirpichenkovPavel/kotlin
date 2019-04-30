@@ -13,9 +13,11 @@ dependencies {
     compileOnly(project(":compiler:util"))
     compileOnly(project(":compiler:plugin-api"))
     compileOnly(intellijCoreDep()) { includeJars("intellij-core") }
-    compileOnly(intellijDep()) { includeJars("asm-all") }
-    runtime(project(":kotlin-stdlib"))
-
+    compileOnly(intellijDep()) { includeJars("asm-all", rootProject = rootProject) }
+    runtime(kotlinStdlib())
+    testRuntimeOnly(intellijDep()) {
+        includeJars("guava", rootProject = rootProject)
+    }
     testRuntimeOnly(projectRuntimeJar(":kotlin-compiler"))
     testCompile(project(":compiler:backend"))
     testCompile(project(":compiler:cli"))
@@ -28,18 +30,12 @@ sourceSets {
     "test" { projectDefault() }
 }
 
-val jar = runtimeJar {
-    from(fileTree("$projectDir/src")) { include("META-INF/**") }
-}
+runtimeJar()
 
-testsJar {}
+testsJar()
 
 dist(targetName = the<BasePluginConvention>().archivesBaseName.removePrefix("kotlin-") + ".jar")
 
-ideaPlugin {
-    from(jar)
-}
-
-projectTest {
+projectTest(parallel = true) {
     workingDir = rootDir
 }

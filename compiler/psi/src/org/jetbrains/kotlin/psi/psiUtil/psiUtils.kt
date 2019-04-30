@@ -20,6 +20,7 @@ import com.intellij.injected.editor.VirtualFileWindow
 import com.intellij.lang.ASTNode
 import com.intellij.openapi.util.TextRange
 import com.intellij.psi.*
+import com.intellij.psi.impl.source.tree.LazyParseablePsiElement
 import com.intellij.psi.impl.source.tree.TreeUtil
 import com.intellij.psi.search.PsiSearchScopeUtil
 import com.intellij.psi.search.SearchScope
@@ -296,11 +297,18 @@ val PsiElement.endOffset: Int
     get() = textRange.endOffset
 
 val KtPureElement.pureStartOffset: Int
-    get() = psiOrParent.textRange.startOffset
+    get() = psiOrParent.textRangeWithoutComments.startOffset
 
 val KtPureElement.pureEndOffset: Int
-    get() = psiOrParent.textRange.endOffset
+    get() = psiOrParent.textRangeWithoutComments.endOffset
 
+val PsiElement.startOffsetSkippingComments: Int
+    get() {
+        if (!startsWithComment()) return startOffset // fastpath
+        val firstNonCommentChild = generateSequence(firstChild) { it.nextSibling }
+            .firstOrNull { it !is PsiWhiteSpace && it !is PsiComment }
+        return firstNonCommentChild?.startOffset ?: startOffset
+    }
 
 fun PsiElement.getStartOffsetIn(ancestor: PsiElement): Int {
     var offset = 0
@@ -357,10 +365,10 @@ private fun findFirstLeafWhollyInRange(file: PsiFile, range: TextRange): PsiElem
 }
 
 val PsiElement.textRangeWithoutComments: TextRange
-    get() {
-        val firstNonCommentChild = children.firstOrNull { it !is PsiWhiteSpace && it !is PsiComment } ?: return textRange
-        return TextRange(firstNonCommentChild.startOffset, endOffset)
-    }
+    get() = if (!startsWithComment()) textRange else TextRange(startOffsetSkippingComments, endOffset)
+
+fun PsiElement.startsWithComment(): Boolean = firstChild is PsiComment
+
 
 // ---------------------------------- Debug/logging ----------------------------------------------------------------------------------------
 
@@ -373,7 +381,7 @@ fun PsiElement.getElementTextWithContext(): String {
 
     // Find parent for element among file children
     val topLevelElement = PsiTreeUtil.findFirstParent(this, { it.parent is PsiFile })
-            ?: throw AssertionError("For non-file element we should always be able to find parent in file children")
+        ?: throw AssertionError("For non-file element we should always be able to find parent in file children")
 
     val startContextOffset = topLevelElement.startOffset
     val elementContextOffset = textRange.startOffset
@@ -424,6 +432,9 @@ fun PsiElement.before(element: PsiElement) = textRange.endOffset <= element.text
 
 inline fun <reified T : PsiElement> PsiElement.getLastParentOfTypeInRow() = parents.takeWhile { it is T }.lastOrNull() as? T
 
+inline fun <reified T : PsiElement> PsiElement.getLastParentOfTypeInRowWithSelf() = parentsWithSelf
+    .takeWhile { it is T }.lastOrNull() as? T
+
 fun KtModifierListOwner.hasExpectModifier() = hasModifier(KtTokens.HEADER_KEYWORD) || hasModifier(KtTokens.EXPECT_KEYWORD)
 fun KtModifierList.hasExpectModifier() = hasModifier(KtTokens.HEADER_KEYWORD) || hasModifier(KtTokens.EXPECT_KEYWORD)
 
@@ -455,4 +466,14 @@ fun ASTNode.closestPsiElement(): PsiElement? {
         node = node.treeParent
     }
     return node.psi
+}
+
+fun LazyParseablePsiElement.getContainingKtFile(): KtFile {
+
+    val file = this.containingFile
+
+    if (file is KtFile) return file
+
+    val fileString = if (file != null && file.isValid) file.text else ""
+    throw IllegalStateException("KtElement not inside KtFile: $file with text \"$fileString\" for element $this of type ${this::class.java} node = ${this.node}")
 }

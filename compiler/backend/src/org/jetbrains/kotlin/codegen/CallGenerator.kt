@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen
@@ -18,7 +18,9 @@ enum class ValueKind {
     DEFAULT_MASK,
     METHOD_HANDLE_IN_DEFAULT,
     CAPTURED,
-    DEFAULT_LAMBDA_CAPTURED_PARAMETER
+    DEFAULT_LAMBDA_CAPTURED_PARAMETER,
+    NON_INLINEABLE_ARGUMENT_FOR_INLINE_PARAMETER_CALLED_IN_SUSPEND,
+    NON_INLINEABLE_ARGUMENT_FOR_INLINE_SUSPEND_PARAMETER
 }
 
 interface CallGenerator {
@@ -47,18 +49,18 @@ interface CallGenerator {
         }
 
         override fun genValueAndPut(
-            valueParameterDescriptor: ValueParameterDescriptor,
+            valueParameterDescriptor: ValueParameterDescriptor?,
             argumentExpression: KtExpression,
-            parameterType: Type,
+            parameterType: JvmKotlinType,
             parameterIndex: Int
         ) {
-            val container = valueParameterDescriptor.containingDeclaration
-            val isVarargInvoke = JvmCodegenUtil.isDeclarationOfBigArityFunctionInvoke(container)
+            val container = valueParameterDescriptor?.containingDeclaration
+            val isVarargInvoke = container != null && JvmCodegenUtil.isDeclarationOfBigArityFunctionInvoke(container)
 
             val v = codegen.v
             if (isVarargInvoke) {
                 if (parameterIndex == 0) {
-                    v.iconst(container.valueParameters.size)
+                    v.iconst(container!!.valueParameters.size)
                     v.newarray(OBJECT_TYPE)
                 }
                 v.dup()
@@ -66,15 +68,12 @@ interface CallGenerator {
             }
 
             val value = codegen.gen(argumentExpression)
-            value.put(parameterType, valueParameterDescriptor.unsubstitutedType, v)
+            value.put(parameterType.type, parameterType.kotlinType, v)
 
             if (isVarargInvoke) {
                 v.astore(OBJECT_TYPE)
             }
         }
-
-        private val ValueParameterDescriptor.unsubstitutedType
-            get() = containingDeclaration.original.valueParameters[index].type
 
         override fun putCapturedValueOnStack(stackValue: StackValue, valueType: Type, paramIndex: Int) {
             stackValue.put(stackValue.type, stackValue.kotlinType, codegen.v)
@@ -119,9 +118,9 @@ interface CallGenerator {
     fun genCallInner(callableMethod: Callable, resolvedCall: ResolvedCall<*>?, callDefault: Boolean, codegen: ExpressionCodegen)
 
     fun genValueAndPut(
-        valueParameterDescriptor: ValueParameterDescriptor,
+        valueParameterDescriptor: ValueParameterDescriptor?,
         argumentExpression: KtExpression,
-        parameterType: Type,
+        parameterType: JvmKotlinType,
         parameterIndex: Int
     )
 

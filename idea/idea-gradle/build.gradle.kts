@@ -12,7 +12,6 @@ dependencies {
 
     compile(project(":compiler:frontend"))
     compile(project(":compiler:frontend.java"))
-    compile(project(":compiler:frontend.script"))
 
     compile(project(":js:js.frontend"))
 
@@ -52,7 +51,9 @@ dependencies {
     testRuntime(intellijPluginDep("gradle"))
     testRuntime(intellijPluginDep("Groovy"))
     testRuntime(intellijPluginDep("coverage"))
-    testRuntime(intellijPluginDep("maven"))
+    if (Ide.IJ()) {
+        testRuntime(intellijPluginDep("maven"))
+    }
     testRuntime(intellijPluginDep("android"))
     testRuntime(intellijPluginDep("smali"))
 }
@@ -67,9 +68,9 @@ sourceSets {
 
 testsJar()
 
-projectTest {
+projectTest(parallel = true) {
     workingDir = rootDir
     useAndroidSdk()
 }
 
-configureInstrumentation()
+configureFormInstrumentation()

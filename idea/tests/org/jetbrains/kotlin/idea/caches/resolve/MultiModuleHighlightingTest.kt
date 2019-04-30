@@ -1,17 +1,6 @@
 /*
- * Copyright 2010-2015 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.caches.resolve
@@ -29,6 +18,7 @@ import com.intellij.psi.impl.PsiModificationTrackerImpl
 import com.intellij.psi.util.PsiModificationTracker
 import org.jetbrains.kotlin.analyzer.ModuleInfo
 import org.jetbrains.kotlin.analyzer.ResolverForModuleComputationTracker
+import org.jetbrains.kotlin.cli.common.arguments.K2JSCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import org.jetbrains.kotlin.codegen.forTestCompile.ForTestCompileRuntime
 import org.jetbrains.kotlin.config.LanguageFeature
@@ -43,7 +33,6 @@ import org.jetbrains.kotlin.idea.facet.KotlinFacetType
 import org.jetbrains.kotlin.idea.framework.JSLibraryKind
 import org.jetbrains.kotlin.idea.project.KotlinCodeBlockModificationListener
 import org.jetbrains.kotlin.idea.project.KotlinModuleModificationTracker
-import org.jetbrains.kotlin.idea.project.getLanguageVersionSettings
 import org.jetbrains.kotlin.idea.test.PluginTestCaseBase
 import org.jetbrains.kotlin.idea.test.allKotlinFiles
 import org.jetbrains.kotlin.idea.util.application.executeWriteCommand
@@ -51,9 +40,12 @@ import org.jetbrains.kotlin.idea.util.application.runWriteAction
 import org.jetbrains.kotlin.idea.util.projectStructure.sdk
 import org.jetbrains.kotlin.samWithReceiver.SamWithReceiverCommandLineProcessor.Companion.ANNOTATION_OPTION
 import org.jetbrains.kotlin.samWithReceiver.SamWithReceiverCommandLineProcessor.Companion.PLUGIN_ID
+import org.jetbrains.kotlin.test.JUnit3WithIdeaConfigurationRunner
 import org.jetbrains.kotlin.test.MockLibraryUtil
 import org.jetbrains.kotlin.test.TestJdkKind.FULL_JDK
+import org.junit.runner.RunWith
 
+@RunWith(JUnit3WithIdeaConfigurationRunner::class)
 open class MultiModuleHighlightingTest : AbstractMultiModuleHighlightingTest() {
     override fun getTestDataPath() = PluginTestCaseBase.getTestDataPathBase() + "/multiModuleHighlighting/"
 
@@ -204,12 +196,12 @@ open class MultiModuleHighlightingTest : AbstractMultiModuleHighlightingTest() {
     fun testSamWithReceiverExtension() {
         val module1 = module("m1").setupKotlinFacet {
             settings.compilerArguments!!.pluginOptions =
-                    arrayOf("plugin:${PLUGIN_ID}:${ANNOTATION_OPTION.name}=anno.A")
+                arrayOf("plugin:$PLUGIN_ID:${ANNOTATION_OPTION.optionName}=anno.A")
         }
 
         val module2 = module("m2").setupKotlinFacet {
             settings.compilerArguments!!.pluginOptions =
-                    arrayOf("plugin:${PLUGIN_ID}:${ANNOTATION_OPTION.name}=anno.B")
+                arrayOf("plugin:$PLUGIN_ID:${ANNOTATION_OPTION.optionName}=anno.B")
         }
 
 
@@ -241,7 +233,10 @@ open class MultiModuleHighlightingTest : AbstractMultiModuleHighlightingTest() {
             )
         )
 
-        module("usage").addLibrary(lib, kind = JSLibraryKind)
+        val usageModule = module("usage")
+        usageModule.makeJsModule()
+        usageModule.addLibrary(lib, kind = JSLibraryKind)
+
         checkHighlightingInProject()
     }
 
@@ -295,6 +290,12 @@ open class MultiModuleHighlightingTest : AbstractMultiModuleHighlightingTest() {
             configuration.settings.useProjectSettings = false
 
             configuration.configure()
+        }
+    }
+
+    private fun Module.makeJsModule() {
+        setupKotlinFacet {
+            settings.compilerArguments = K2JSCompilerArguments()
         }
     }
 }

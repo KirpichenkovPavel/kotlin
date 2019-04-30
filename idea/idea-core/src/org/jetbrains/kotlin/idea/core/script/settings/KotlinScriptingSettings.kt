@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.core.script.settings
@@ -12,10 +12,9 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.project.Project
 import com.intellij.util.addOptionTag
 import com.intellij.util.attribute
-import com.intellij.util.element
 import com.intellij.util.getAttributeBooleanValue
 import org.jdom.Element
-import org.jetbrains.kotlin.script.KotlinScriptDefinition
+import org.jetbrains.kotlin.scripting.definitions.KotlinScriptDefinition
 
 @State(
     name = "KotlinScriptingSettings",
@@ -60,10 +59,12 @@ class KotlinScriptingSettings : PersistentStateComponent<Element> {
     }
 
     override fun loadState(state: Element) {
-        isAutoReloadEnabled =
-                state.getAttributeBooleanValue(KotlinScriptingSettings::isAutoReloadEnabled.name)
-        suppressDefinitionsCheck =
-                state.getAttributeBooleanValue(KotlinScriptingSettings::suppressDefinitionsCheck.name)
+        state.getOptionTag(KotlinScriptingSettings::isAutoReloadEnabled.name)?.let {
+            isAutoReloadEnabled = it
+        }
+        state.getOptionTag(KotlinScriptingSettings::suppressDefinitionsCheck.name)?.let {
+            suppressDefinitionsCheck = it
+        }
 
         val scriptDefinitionsList = state.getChildren(SCRIPT_DEFINITION_TAG)
         for (scriptDefinitionElement in scriptDefinitionsList) {
@@ -102,20 +103,26 @@ class KotlinScriptingSettings : PersistentStateComponent<Element> {
         KotlinScriptDefinitionKey(this.name, this::class.qualifiedName ?: "unknown")
 
     private fun Element.addScriptDefinitionContentElement(definition: KotlinScriptDefinitionKey, settings: KotlinScriptDefinitionValue) {
-        element(SCRIPT_DEFINITION_TAG).apply {
+        addElement(SCRIPT_DEFINITION_TAG).apply {
             attribute(KotlinScriptDefinitionKey::className.name, definition.className)
             attribute(KotlinScriptDefinitionKey::definitionName.name, definition.definitionName)
 
-            element(KotlinScriptDefinitionValue::order.name).apply {
+            addElement(KotlinScriptDefinitionValue::order.name).apply {
                 text = settings.order.toString()
             }
 
             if (!settings.isEnabled) {
-                element(KotlinScriptDefinitionValue::isEnabled.name).apply {
+                addElement(KotlinScriptDefinitionValue::isEnabled.name).apply {
                     text = settings.isEnabled.toString()
                 }
             }
         }
+    }
+
+    private fun Element.addElement(name: String): Element {
+        val element = Element(name)
+        addContent(element)
+        return element
     }
 
     private fun Element.toValue(): KotlinScriptDefinitionValue {
@@ -124,6 +131,9 @@ class KotlinScriptingSettings : PersistentStateComponent<Element> {
 
         return KotlinScriptDefinitionValue(order, isEnabled)
     }
+
+    private fun Element.getOptionTag(name: String) =
+        getChildren("option").firstOrNull { it.getAttribute("name").value == name }?.getAttributeBooleanValue("value")
 
     companion object {
         fun getInstance(project: Project): KotlinScriptingSettings =

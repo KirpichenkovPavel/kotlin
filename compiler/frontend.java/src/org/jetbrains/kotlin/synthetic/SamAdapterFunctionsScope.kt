@@ -59,8 +59,9 @@ class SamAdapterFunctionsScope(
     private val samResolver: SamConversionResolver,
     private val deprecationResolver: DeprecationResolver,
     private val lookupTracker: LookupTracker
-) : SyntheticScope {
-    private val samViaSyntheticScopeDisabled = languageVersionSettings.supportsFeature(LanguageFeature.NewInference)
+) : SyntheticScope.Default() {
+    private val samViaSyntheticScopeDisabled = languageVersionSettings.supportsFeature(LanguageFeature.NewInference) &&
+            languageVersionSettings.supportsFeature(LanguageFeature.SamConversionForKotlinFunctions)
 
     private val extensionForFunction =
             storageManager.createMemoizedFunctionWithNullableValues<FunctionDescriptor, FunctionDescriptor> { function ->
@@ -149,10 +150,6 @@ class SamAdapterFunctionsScope(
                     }
         }
     }
-
-    override fun getSyntheticExtensionProperties(receiverTypes: Collection<KotlinType>, name: Name, location: LookupLocation): Collection<PropertyDescriptor> = emptyList()
-
-    override fun getSyntheticExtensionProperties(receiverTypes: Collection<KotlinType>): Collection<PropertyDescriptor> = emptyList()
 
     override fun getSyntheticStaticFunctions(scope: ResolutionScope, name: Name, location: LookupLocation): Collection<FunctionDescriptor> {
         if (samViaSyntheticScopeDisabled) return emptyList()

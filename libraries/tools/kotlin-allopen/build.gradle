@@ -1,4 +1,5 @@
 apply plugin: 'kotlin'
+apply plugin: 'jps-compatible'
 
 configureJvmProject(project)
 configurePublishing(project)
@@ -8,11 +9,15 @@ repositories {
     jcenter()
 }
 
+pill {
+    variant = 'FULL'
+}
+
 dependencies {
     compile project(':kotlin-gradle-plugin-api')
     compile project(':kotlin-gradle-plugin-model')
 
-    compile project(':kotlin-stdlib')
+    compile kotlinStdlib()
     compileOnly project(path: ':kotlin-compiler-embeddable', configuration: 'runtimeJar')
     compileOnly project(':kotlin-allopen-compiler-plugin')
 
@@ -40,8 +45,9 @@ ArtifactsKt.runtimeJar(project, EmbeddableKt.rewriteDepsToShadedCompiler(project
 
 artifacts {
     archives sourcesJar
-    archives javadocJar
 }
+
+javadocJar()
 
 pluginBundle {
     plugins {

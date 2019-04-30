@@ -16,7 +16,6 @@
 
 package org.jetbrains.uast.test.kotlin
 
-import com.intellij.psi.PsiClassType
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiLanguageInjectionHost
@@ -31,9 +30,12 @@ import org.jetbrains.kotlin.psi.KtFile
 import org.jetbrains.kotlin.psi.KtPsiFactory
 import org.jetbrains.kotlin.psi.psiUtil.findDescendantOfType
 import org.jetbrains.kotlin.psi.psiUtil.getParentOfType
+import org.jetbrains.kotlin.test.JUnit3WithIdeaConfigurationRunner
 import org.jetbrains.uast.*
-import org.jetbrains.uast.test.env.findUElementByTextFromPsi
+import org.jetbrains.uast.test.env.kotlin.findUElementByTextFromPsi
+import org.junit.runner.RunWith
 
+@RunWith(JUnit3WithIdeaConfigurationRunner::class)
 class KotlinDetachedUastTest : KotlinLightCodeInsightFixtureTestCase() {
 
     override fun getProjectDescriptor(): LightProjectDescriptor = KotlinWithJdkAndRuntimeLightProjectDescriptor.INSTANCE
@@ -129,19 +131,6 @@ class KotlinDetachedUastTest : KotlinLightCodeInsightFixtureTestCase() {
             TestCase.assertTrue("it should have some parents $it actually", it > 1)
         }
 
-    }
-
-    fun testResolveStringFromUast() {
-        val file = myFixture.addFileToProject(
-            "s.kt", """fun foo(){
-                val s = "abc"
-                s.toUpperCase()
-                }
-            ""${'"'}"""
-        )
-
-        val refs = file.findUElementByTextFromPsi<UQualifiedReferenceExpression>("s.toUpperCase()")
-        TestCase.assertNotNull((refs.receiver.getExpressionType() as PsiClassType).resolve())
     }
 
 }

@@ -8,7 +8,7 @@ public final class Tuple</*0*/ Ts> {
     public constructor Tuple</*0*/ Ts>(/*0*/ vararg values: Ts /*kotlin.Array<out Ts>*/)
     private final val _values: kotlin.Array<kotlin.Any?>
     public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
-    public final fun </*0*/ T> get(/*0*/ ix: @kotlin.experimental.TypeIndex(targetType = T::class, variadicParameter = Ts::class) kotlin.Int): T
+    public final fun </*0*/ T> get(/*0*/ ix: @kotlin.experimental.TypeIndex(targetType = T::class, variadicParameter = Ts...::class) kotlin.Int): T
     public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
     public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
 }

@@ -1,18 +1,20 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls.inference.components
 
 import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
+import org.jetbrains.kotlin.resolve.calls.inference.model.NewTypeVariable
 import org.jetbrains.kotlin.resolve.calls.inference.model.TypeVariableFromCallableDescriptor
 import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.types.checker.NewCapturedType
 import org.jetbrains.kotlin.types.checker.NewCapturedTypeConstructor
 import org.jetbrains.kotlin.types.checker.intersectTypes
+import org.jetbrains.kotlin.types.model.TypeSubstitutorMarker
 
-interface NewTypeSubstitutor {
+interface NewTypeSubstitutor: TypeSubstitutorMarker {
     fun substituteNotNullTypeWithConstructor(constructor: TypeConstructor): UnwrappedType?
 
     fun safeSubstitute(type: UnwrappedType): UnwrappedType = substitute(type, runCapturedChecks = true, keepAnnotation = false) ?: type
@@ -166,6 +168,11 @@ class FreshVariableNewTypeSubstitutor(val freshVariables: List<TypeVariableFromC
     companion object {
         val Empty = FreshVariableNewTypeSubstitutor(emptyList())
     }
+}
+
+fun UnwrappedType.substituteTypeVariable(typeVariable: NewTypeVariable, value: UnwrappedType): UnwrappedType {
+    val substitutor = NewTypeSubstitutorByConstructorMap(mapOf(typeVariable.freshTypeConstructor to value))
+    return substitutor.safeSubstitute(this)
 }
 
 open class DelegatingNewTypeSubstitutor(val delegate: NewTypeSubstitutor) : NewTypeSubstitutor {

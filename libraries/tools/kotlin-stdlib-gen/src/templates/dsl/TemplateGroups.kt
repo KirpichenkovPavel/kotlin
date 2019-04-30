@@ -1,11 +1,10 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package templates
 
-import kotlin.coroutines.experimental.buildSequence
 import kotlin.reflect.KTypeProjection
 import kotlin.reflect.full.createType
 import kotlin.reflect.full.isSubtypeOf
@@ -17,7 +16,7 @@ fun templateGroupOf(vararg templates: MemberTemplate): TemplateGroup = { templat
 
 abstract class TemplateGroupBase : TemplateGroup {
 
-    override fun invoke(): Sequence<MemberTemplate> = buildSequence {
+    override fun invoke(): Sequence<MemberTemplate> = sequence {
         with(this@TemplateGroupBase) {
             this::class.members.filter { it.name.startsWith("f_") }.forEach {
                 require(it.parameters.size == 1) { "Member $it violates naming convention" }

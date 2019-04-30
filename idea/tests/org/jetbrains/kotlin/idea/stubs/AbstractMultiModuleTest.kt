@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.stubs
@@ -48,7 +48,7 @@ abstract class AbstractMultiModuleTest : DaemonAnalyzerTestCase() {
 
     fun module(name: String, jdk: TestJdkKind = TestJdkKind.MOCK_JDK, hasTestRoot: Boolean = false): Module {
         val srcDir = testDataPath + "${getTestName(true)}/$name"
-        val moduleWithSrcRootSet = createModuleFromTestData(srcDir, name, StdModuleTypes.JAVA, true)!!
+        val moduleWithSrcRootSet = createModuleFromTestData(srcDir, name, StdModuleTypes.JAVA, true)
         if (hasTestRoot) {
             addRoot(
                 moduleWithSrcRootSet,
@@ -60,6 +60,11 @@ abstract class AbstractMultiModuleTest : DaemonAnalyzerTestCase() {
         ConfigLibraryUtil.configureSdk(moduleWithSrcRootSet, PluginTestCaseBase.addJdk(testRootDisposable) { PluginTestCaseBase.jdk(jdk) })
 
         return moduleWithSrcRootSet
+    }
+
+    override fun tearDown() {
+        VfsRootAccess.disallowRootAccess(KotlinTestUtils.getHomeDirectory())
+        super.tearDown()
     }
 
     public override fun createModule(path: String, moduleType: ModuleType<*>): Module {

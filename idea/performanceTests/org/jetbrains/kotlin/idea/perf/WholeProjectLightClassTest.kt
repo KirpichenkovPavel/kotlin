@@ -1,10 +1,11 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.perf
 
+import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.vfs.VirtualFile
 import org.jetbrains.kotlin.asJava.classes.KtLightClassForSourceDeclaration
 import org.jetbrains.kotlin.asJava.toLightClass
@@ -63,5 +64,10 @@ class WholeProjectLightClassTest : WholeProjectPerformanceTest(), WholeProjectKo
         }
 
         return PerFileTestResult(results, totalNs, errors)
+    }
+
+    fun testUltraLightPerformance() {
+        Registry.get("kotlin.use.ultra.light.classes").setValue(true, testRootDisposable)
+        testWholeProjectPerformance()
     }
 }

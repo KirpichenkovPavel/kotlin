@@ -21,14 +21,16 @@ import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.psi.KtPostfixExpression
 import org.jetbrains.uast.*
 import org.jetbrains.uast.kotlin.declarations.KotlinUIdentifier
+import org.jetbrains.uast.kotlin.internal.DelegatedMultiResolve
 
 class KotlinUPostfixExpression(
-        override val psi: KtPostfixExpression,
+        override val sourcePsi: KtPostfixExpression,
         givenParent: UElement?
-) : KotlinAbstractUExpression(givenParent), UPostfixExpression, KotlinUElementWithType, KotlinEvaluatableUElement, UResolvable {
-    override val operand by lz { KotlinConverter.convertOrEmpty(psi.baseExpression, this) }
+) : KotlinAbstractUExpression(givenParent), UPostfixExpression, KotlinUElementWithType, KotlinEvaluatableUElement,
+    UResolvable, DelegatedMultiResolve {
+    override val operand by lz { KotlinConverter.convertOrEmpty(sourcePsi.baseExpression, this) }
 
-    override val operator = when (psi.operationToken) {
+    override val operator = when (sourcePsi.operationToken) {
         KtTokens.PLUSPLUS -> UastPostfixOperator.INC
         KtTokens.MINUSMINUS -> UastPostfixOperator.DEC
         KtTokens.EXCLEXCL -> KotlinPostfixOperators.EXCLEXCL
@@ -36,11 +38,11 @@ class KotlinUPostfixExpression(
     }
 
     override val operatorIdentifier: UIdentifier?
-        get() = KotlinUIdentifier(psi.operationReference, this)
+        get() = KotlinUIdentifier(sourcePsi.operationReference, this)
 
-    override fun resolveOperator() = psi.operationReference.resolveCallToDeclaration(context = this) as? PsiMethod
+    override fun resolveOperator() = sourcePsi.operationReference.resolveCallToDeclaration() as? PsiMethod
 
-    override fun resolve(): PsiMethod? = when (psi.operationToken) {
+    override fun resolve(): PsiMethod? = when (sourcePsi.operationToken) {
         KtTokens.EXCLEXCL -> operand.tryResolve() as? PsiMethod
         else -> null
     }

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license 
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 @file:kotlin.jvm.JvmMultifileClass
@@ -347,6 +347,8 @@ public inline fun <T> Sequence<T>.singleOrNull(predicate: (T) -> Boolean): T? {
  *
  * The operation is _intermediate_ and _stateless_.
  * 
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
  * @sample samples.collections.Collections.Transformations.drop
  */
 public fun <T> Sequence<T>.drop(n: Int): Sequence<T> {
@@ -478,6 +480,8 @@ public inline fun <T, C : MutableCollection<in T>> Sequence<T>.filterTo(destinat
  *
  * The operation is _intermediate_ and _stateless_.
  * 
+ * @throws IllegalArgumentException if [n] is negative.
+ * 
  * @sample samples.collections.Collections.Transformations.take
  */
 public fun <T> Sequence<T>.take(n: Int): Sequence<T> {
@@ -502,6 +506,8 @@ public fun <T> Sequence<T>.takeWhile(predicate: (T) -> Boolean): Sequence<T> {
 
 /**
  * Returns a sequence that yields elements of this sequence sorted according to their natural sort order.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  *
  * The operation is _intermediate_ and _stateful_.
  */
@@ -517,6 +523,8 @@ public fun <T : Comparable<T>> Sequence<T>.sorted(): Sequence<T> {
 
 /**
  * Returns a sequence that yields elements of this sequence sorted according to natural sort order of the value returned by specified [selector] function.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  *
  * The operation is _intermediate_ and _stateful_.
  */
@@ -526,6 +534,8 @@ public inline fun <T, R : Comparable<R>> Sequence<T>.sortedBy(crossinline select
 
 /**
  * Returns a sequence that yields elements of this sequence sorted descending according to natural sort order of the value returned by specified [selector] function.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  *
  * The operation is _intermediate_ and _stateful_.
  */
@@ -535,6 +545,8 @@ public inline fun <T, R : Comparable<R>> Sequence<T>.sortedByDescending(crossinl
 
 /**
  * Returns a sequence that yields elements of this sequence sorted descending according to their natural sort order.
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  *
  * The operation is _intermediate_ and _stateful_.
  */
@@ -544,6 +556,8 @@ public fun <T : Comparable<T>> Sequence<T>.sortedDescending(): Sequence<T> {
 
 /**
  * Returns a sequence that yields elements of this sequence sorted according to the specified [comparator].
+ * 
+ * The sort is _stable_. It means that equal elements preserve their order relative to each other after sorting.
  *
  * The operation is _intermediate_ and _stateful_.
  */
@@ -1141,20 +1155,23 @@ public fun <T : Comparable<T>> Sequence<T>.max(): T? {
  * Returns the first element yielding the largest value of the given function or `null` if there are no elements.
  *
  * The operation is _terminal_.
+ * 
+ * @sample samples.collections.Collections.Aggregates.maxBy
  */
 public inline fun <T, R : Comparable<R>> Sequence<T>.maxBy(selector: (T) -> R): T? {
     val iterator = iterator()
     if (!iterator.hasNext()) return null
     var maxElem = iterator.next()
+    if (!iterator.hasNext()) return maxElem
     var maxValue = selector(maxElem)
-    while (iterator.hasNext()) {
+    do {
         val e = iterator.next()
         val v = selector(e)
         if (maxValue < v) {
             maxElem = e
             maxValue = v
         }
-    }
+    } while (iterator.hasNext())
     return maxElem
 }
 
@@ -1236,20 +1253,23 @@ public fun <T : Comparable<T>> Sequence<T>.min(): T? {
  * Returns the first element yielding the smallest value of the given function or `null` if there are no elements.
  *
  * The operation is _terminal_.
+ * 
+ * @sample samples.collections.Collections.Aggregates.minBy
  */
 public inline fun <T, R : Comparable<R>> Sequence<T>.minBy(selector: (T) -> R): T? {
     val iterator = iterator()
     if (!iterator.hasNext()) return null
     var minElem = iterator.next()
+    if (!iterator.hasNext()) return minElem
     var minValue = selector(minElem)
-    while (iterator.hasNext()) {
+    do {
         val e = iterator.next()
         val v = selector(e)
         if (minValue > v) {
             minElem = e
             minValue = v
         }
-    }
+    } while (iterator.hasNext())
     return minElem
 }
 

@@ -1,15 +1,15 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.spec.tasks
 
-import org.jetbrains.kotlin.spec.generators.featureinteraction.Feature
-import org.jetbrains.kotlin.spec.generators.featureinteraction.generationLinkedSpecTestDataConfig
-import org.jetbrains.kotlin.spec.generators.featureinteraction.generationSpecTestDataConfigGroup
-import org.jetbrains.kotlin.spec.validators.TestArea
-import org.jetbrains.kotlin.spec.validators.TestType
+import org.jetbrains.kotlin.spec.TestArea
+import org.jetbrains.kotlin.spec.TestType
+import org.jetbrains.kotlin.spec.generators.templates.Feature
+import org.jetbrains.kotlin.spec.generators.templates.generationLinkedSpecTestDataConfig
+import org.jetbrains.kotlin.spec.generators.templates.generationSpecTestDataConfigGroup
 
 fun main(args: Array<String>) {
     generationSpecTestDataConfigGroup(regenerateTests = true) {

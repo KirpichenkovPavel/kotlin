@@ -27,7 +27,6 @@ import org.jetbrains.kotlin.asJava.elements.KtLightElement
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.idea.caches.KotlinShortNamesCache
 import org.jetbrains.kotlin.idea.caches.resolve.resolveImportReference
-import org.jetbrains.kotlin.idea.caches.resolve.resolveToDescriptorIfAny
 import org.jetbrains.kotlin.idea.caches.resolve.unsafeResolveToDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.util.getJavaMemberDescriptor
 import org.jetbrains.kotlin.idea.caches.resolve.util.resolveToDescriptor
@@ -41,6 +40,7 @@ import org.jetbrains.kotlin.idea.util.CallType
 import org.jetbrains.kotlin.idea.util.CallTypeAndReceiver
 import org.jetbrains.kotlin.idea.util.receiverTypes
 import org.jetbrains.kotlin.idea.util.substituteExtensionIfCallable
+import org.jetbrains.kotlin.incremental.KotlinLookupLocation
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.load.java.sam.SamAdapterDescriptor
@@ -170,8 +170,9 @@ class KotlinIndicesHelper(
 
         val additionalDescriptors = ArrayList<CallableDescriptor>(0)
 
-        for (extension in KotlinIndicesHelperExtension.getInstances(project)) {
-            extension.appendExtensionCallables(additionalDescriptors, moduleDescriptor, receiverTypes, nameFilter)
+        val lookupLocation = this.file?.let { KotlinLookupLocation(it) } ?: NoLookupLocation.FROM_IDE
+        for (extension in @Suppress("DEPRECATION") KotlinIndicesHelperExtension.getInstances(project)) {
+            extension.appendExtensionCallables(additionalDescriptors, moduleDescriptor, receiverTypes, nameFilter, lookupLocation)
         }
 
         return if (additionalDescriptors.isNotEmpty())
@@ -190,23 +191,40 @@ class KotlinIndicesHelper(
         fun searchRecursively(typeName: String) {
             ProgressManager.checkCanceled()
             index[typeName, project, scope].asSequence()
-                    .map { it.resolveToDescriptorIfAny() as? TypeAliasDescriptor }
-                    .filterNotNull()
-                    .filter { it.expandedType.constructor == typeConstructor }
-                    .filter { out.putIfAbsent(it.fqNameSafe, it) == null }
-                    .map { it.name.asString() }
-                    .forEach(::searchRecursively)
+                .filter { it in scope }
+                .flatMap { it.resolveToDescriptors<TypeAliasDescriptor>().asSequence() }
+                .filter { it.expandedType.constructor == typeConstructor }
+                .filter { out.putIfAbsent(it.fqNameSafe, it) == null }
+                .map { it.name.asString() }
+                .forEach(::searchRecursively)
         }
 
         searchRecursively(originalTypeName)
         return out.values.toSet()
     }
 
+    private fun possibleTypeAliasExpansionNames(originalTypeName: String): Set<String> {
+        val index = KotlinTypeAliasByExpansionShortNameIndex.INSTANCE
+        val out = mutableSetOf<String>()
+
+        fun searchRecursively(typeName: String) {
+            ProgressManager.checkCanceled()
+            index[typeName, project, scope].asSequence()
+                .filter { it in scope }
+                .mapNotNull { it.name }
+                .filter { out.add(it) }
+                .forEach(::searchRecursively)
+        }
+
+        searchRecursively(originalTypeName)
+        return out
+    }
+
     private fun MutableCollection<String>.addTypeNames(type: KotlinType) {
         val constructor = type.constructor
         constructor.declarationDescriptor?.name?.asString()?.let { typeName ->
             add(typeName)
-            resolveTypeAliasesUsingIndex(type, typeName).mapTo(this, { it.name.asString() })
+            addAll(possibleTypeAliasExpansionNames(typeName))
         }
         constructor.supertypes.forEach { addTypeNames(it) }
     }

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.inspections.collections
@@ -52,15 +52,14 @@ class ConvertCallChainIntoSequenceInspection : AbstractKotlinInspection() {
                 ProblemHighlightType.GENERIC_ERROR_OR_WARNING
             else
                 ProblemHighlightType.INFORMATION
-            holder.registerProblem(
-                holder.manager.createProblemDescriptor(
-                    qualified,
-                    rangeInElement,
-                    "Call chain on collection could be converted into 'Sequence' to improve performance",
-                    highlightType,
-                    isOnTheFly,
-                    ConvertCallChainIntoSequenceFix()
-                )
+
+            holder.registerProblemWithoutOfflineInformation(
+                qualified,
+                "Call chain on collection could be converted into 'Sequence' to improve performance",
+                isOnTheFly,
+                highlightType,
+                rangeInElement,
+                ConvertCallChainIntoSequenceFix()
             )
         })
 

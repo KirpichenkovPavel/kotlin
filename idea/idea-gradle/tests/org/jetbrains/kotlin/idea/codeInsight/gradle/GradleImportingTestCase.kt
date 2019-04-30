@@ -24,6 +24,8 @@ import com.intellij.openapi.externalSystem.model.settings.ExternalSystemExecutio
 import com.intellij.openapi.externalSystem.settings.ExternalProjectSettings
 import com.intellij.openapi.externalSystem.settings.ExternalSystemSettingsListenerAdapter
 import com.intellij.openapi.externalSystem.util.ExternalSystemApiUtil
+import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.fileEditor.impl.LoadTextUtil
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.projectRoots.JavaSdk
 import com.intellij.openapi.projectRoots.ProjectJdkTable
@@ -41,13 +43,17 @@ import org.gradle.util.GradleVersion
 import org.gradle.wrapper.GradleWrapperMain
 import org.intellij.lang.annotations.Language
 import org.jetbrains.annotations.NonNls
+import org.jetbrains.kotlin.idea.test.KotlinSdkCreationChecker
 import org.jetbrains.kotlin.idea.test.PluginTestCaseBase
+import org.jetbrains.kotlin.test.JUnitParameterizedWithIdeaConfigurationRunner
+import org.jetbrains.kotlin.test.KotlinTestUtils
 import org.jetbrains.plugins.gradle.settings.DistributionType
 import org.jetbrains.plugins.gradle.settings.GradleProjectSettings
 import org.jetbrains.plugins.gradle.settings.GradleSettings
 import org.jetbrains.plugins.gradle.util.GradleConstants
 import org.jetbrains.plugins.groovy.GroovyFileType
 import org.junit.Assume.assumeThat
+import org.junit.BeforeClass
 import org.junit.Rule
 import org.junit.rules.TestName
 import org.junit.runner.RunWith
@@ -57,14 +63,22 @@ import java.io.IOException
 import java.io.StringWriter
 import java.net.URISyntaxException
 import java.util.*
+import org.junit.AfterClass
+import org.junit.Assume.assumeTrue
 
 // part of org.jetbrains.plugins.gradle.importing.GradleImportingTestCase
-@RunWith(value = Parameterized::class)
+@RunWith(value = JUnitParameterizedWithIdeaConfigurationRunner::class)
 abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
+
+    protected var sdkCreationChecker : KotlinSdkCreationChecker? = null
 
     @JvmField
     @Rule
     var name = TestName()
+
+    @JvmField
+    @Rule
+    var testWatcher = ImportingTestWatcher()
 
     @JvmField
     @Rule
@@ -77,9 +91,12 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
     private lateinit var myProjectSettings: GradleProjectSettings
     private lateinit var myJdkHome: String
 
+    open fun isApplicableTest(): Boolean = true
+
     override fun setUp() {
         myJdkHome = IdeaTestUtil.requireRealJdkHome()
         super.setUp()
+        assumeTrue(isApplicableTest())
         assumeThat(gradleVersion, versionMatcherRule.matcher)
         runWrite {
             ProjectJdkTable.getInstance().findJdk(GRADLE_JDK_NAME)?.let {
@@ -92,10 +109,13 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
             FileTypeManager.getInstance().associateExtension(GroovyFileType.GROOVY_FILE_TYPE, "gradle")
 
         }
-        myProjectSettings = GradleProjectSettings()
+        myProjectSettings = GradleProjectSettings().apply {
+            this.isUseQualifiedModuleNames = false
+        }
         GradleSettings.getInstance(myProject).gradleVmOptions = "-Xmx128m -XX:MaxPermSize=64m"
         System.setProperty(ExternalSystemExecutionSettings.REMOTE_PROCESS_IDLE_TTL_IN_MS_KEY, GRADLE_DAEMON_TTL_MS.toString())
         configureWrapper()
+        sdkCreationChecker = KotlinSdkCreationChecker()
     }
 
     override fun tearDown() {
@@ -109,6 +129,7 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
 
             Messages.setTestDialog(TestDialog.DEFAULT)
             FileUtil.delete(BuildManager.getInstance().buildSystemDirectory.toFile())
+            sdkCreationChecker?.removeNewKotlinSdk()
         } finally {
             super.tearDown()
         }
@@ -123,8 +144,6 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
     override fun getName(): String {
         return if (name.methodName == null) super.getName() else FileUtil.sanitizeFileName(name.methodName)
     }
-
-    override fun getTestsTempDir(): String = "gradleImportTests"
 
     override fun getExternalSystemConfigFileName(): String = "build.gradle"
 
@@ -154,7 +173,7 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
                 allprojects {
                     repositories {
                         maven {
-                            url 'http://maven.labs.intellij.net/repo1'
+                            url 'https://maven.labs.intellij.net/repo1'
                         }
                     }
                 }
@@ -200,7 +219,7 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
         return File(baseDir, getTestName(true).substringBefore("_"))
     }
 
-    protected fun configureByFiles(): List<VirtualFile> {
+    protected open fun configureByFiles(): List<VirtualFile> {
         val rootDir = testDataDirectory()
         assert(rootDir.exists()) { "Directory ${rootDir.path} doesn't exist" }
 
@@ -214,6 +233,33 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
             }
         }.toList()
     }
+
+    protected fun importProjectFromTestData(): List<VirtualFile> {
+        val files = configureByFiles()
+        importProject()
+        return files
+    }
+
+    protected fun checkFiles(files: List<VirtualFile>) {
+        FileDocumentManager.getInstance().saveAllDocuments()
+
+        files.filter {
+            it.name == GradleConstants.DEFAULT_SCRIPT_NAME
+                    || it.name == GradleConstants.KOTLIN_DSL_SCRIPT_NAME
+                    || it.name == GradleConstants.SETTINGS_FILE_NAME
+        }
+            .forEach {
+                if (it.name == GradleConstants.SETTINGS_FILE_NAME && !File(testDataDirectory(), it.name + SUFFIX).exists()) return@forEach
+                val actualText = LoadTextUtil.loadText(it).toString()
+                val expectedFileName = if (File(testDataDirectory(), it.name + ".$gradleVersion" + SUFFIX).exists()) {
+                    it.name + ".$gradleVersion" + SUFFIX
+                } else {
+                    it.name + SUFFIX
+                }
+                KotlinTestUtils.assertEqualsToFile(File(testDataDirectory(), expectedFileName), actualText)
+            }
+    }
+
 
     private fun runWrite(f: () -> Unit) {
         object : WriteAction<Any>() {
@@ -233,11 +279,25 @@ abstract class GradleImportingTestCase : ExternalSystemImportingTestCase() {
         @JvmStatic
         @Parameterized.Parameters(name = "{index}: with Gradle-{0}")
         fun data(): Collection<Array<Any>> {
-            return Arrays.asList(*AbstractModelBuilderTest.SUPPORTED_GRADLE_VERSIONS)
+            return listOf(*AbstractModelBuilderTest.SUPPORTED_GRADLE_VERSIONS)
         }
 
         fun wrapperJar(): File {
             return File(PathUtil.getJarPathForClass(GradleWrapperMain::class.java))
+        }
+
+        private var logSaver: GradleImportingTestLogSaver? = null
+
+        @JvmStatic
+        @BeforeClass
+        fun setLoggerFactory() {
+            logSaver = GradleImportingTestLogSaver()
+        }
+
+        @JvmStatic
+        @AfterClass
+        fun restoreLoggerFactory() {
+            logSaver?.restore()
         }
     }
 }

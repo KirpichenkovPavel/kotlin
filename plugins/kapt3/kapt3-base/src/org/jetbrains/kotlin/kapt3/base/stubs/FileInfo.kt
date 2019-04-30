@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kapt3.base.stubs
@@ -21,5 +21,5 @@ class FileInfo(private val lineInfo: LineInfoMap, private val signatureInfo: Map
     }
 
     fun getPositionFor(fqName: String) = lineInfo[fqName]
-    fun getMethodDescriptor(decl: JCTree.JCMethodDecl) = signatureInfo[decl.getJavacSignature()]
+    fun getMethodDescriptor(declaration: JCTree.JCMethodDecl) = signatureInfo[declaration.getJavacSignature()]
 }

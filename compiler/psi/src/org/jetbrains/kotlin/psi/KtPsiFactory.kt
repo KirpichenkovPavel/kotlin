@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.psi
@@ -9,6 +9,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
 import com.intellij.psi.PsiComment
 import com.intellij.psi.PsiElement
+import com.intellij.psi.PsiFile
 import com.intellij.psi.PsiFileFactory
 import com.intellij.psi.util.PsiTreeUtil
 import com.intellij.util.LocalTimeCounter
@@ -255,7 +256,10 @@ class KtPsiFactory @JvmOverloads constructor(private val project: Project, val m
     }
 
     fun createPropertyGetter(expression: KtExpression): KtPropertyAccessor {
-        val property = createProperty("val x get() = 1")
+        val property = if (expression is KtBlockExpression)
+            createProperty("val x get() {\nreturn 1\n}")
+        else
+            createProperty("val x get() = 1")
         val getter = property.getter!!
         val bodyExpression = getter.bodyExpression!!
 
@@ -276,7 +280,7 @@ class KtPsiFactory @JvmOverloads constructor(private val project: Project, val m
     }
 
     fun createDestructuringDeclaration(text: String): KtDestructuringDeclaration {
-        return (createFunction("fun foo() {$text}").bodyExpression as KtBlockExpression).statements.first() as KtDestructuringDeclaration
+        return createFunction("fun foo() {$text}").bodyBlockExpression!!.statements.first() as KtDestructuringDeclaration
     }
 
     fun createDestructuringParameter(text: String): KtParameter {
@@ -288,6 +292,7 @@ class KtPsiFactory @JvmOverloads constructor(private val project: Project, val m
         val file = createFile(text)
         val declarations = file.declarations
         assert(declarations.size == 1) { "${declarations.size} declarations in $text" }
+        @Suppress("UNCHECKED_CAST")
         return declarations.first() as TDeclaration
     }
 
@@ -337,7 +342,7 @@ class KtPsiFactory @JvmOverloads constructor(private val project: Project, val m
     }
 
     fun createEmptyBody(): KtBlockExpression {
-        return createFunction("fun foo() {}").bodyExpression as KtBlockExpression
+        return createFunction("fun foo() {}").bodyBlockExpression!!
     }
 
     fun createAnonymousInitializer(): KtAnonymousInitializer {
@@ -402,6 +407,11 @@ class KtPsiFactory @JvmOverloads constructor(private val project: Project, val m
     fun createSimpleNameStringTemplateEntry(name: String): KtSimpleNameStringTemplateEntry {
         val stringTemplateExpression = createExpression("\"\$$name\"") as KtStringTemplateExpression
         return stringTemplateExpression.entries[0] as KtSimpleNameStringTemplateEntry
+    }
+
+    fun createLiteralStringTemplateEntry(literal: String): KtLiteralStringTemplateEntry {
+        val stringTemplateExpression = createExpression("\"$literal\"") as KtStringTemplateExpression
+        return stringTemplateExpression.entries[0] as KtLiteralStringTemplateEntry
     }
 
     fun createStringTemplate(content: String) = createExpression("\"$content\"") as KtStringTemplateExpression
@@ -816,13 +826,13 @@ class KtPsiFactory @JvmOverloads constructor(private val project: Project, val m
     }
 
     fun createBlock(bodyText: String): KtBlockExpression {
-        return createFunction("fun foo() {\n$bodyText\n}").bodyExpression as KtBlockExpression
+        return createFunction("fun foo() {\n$bodyText\n}").bodyBlockExpression!!
     }
 
     fun createSingleStatementBlock(statement: KtExpression, prevComment: String? = null, nextComment: String? = null): KtBlockExpression {
         val prev = if (prevComment == null) "" else " $prevComment "
         val next = if (nextComment == null) "" else " $nextComment "
-        return createDeclarationByPattern<KtNamedFunction>("fun foo() {\n$prev$0$next\n}", statement).bodyExpression as KtBlockExpression
+        return createDeclarationByPattern<KtNamedFunction>("fun foo() {\n$prev$0$next\n}", statement).bodyBlockExpression!!
     }
 
     fun createComment(text: String): PsiComment {
@@ -845,7 +855,8 @@ class KtPsiFactory @JvmOverloads constructor(private val project: Project, val m
     }
 
     private class BlockWrapper(fakeBlockExpression: KtBlockExpression, private val expression: KtExpression) :
-        KtBlockExpression(fakeBlockExpression.node), KtPsiUtil.KtExpressionWrapper {
+        KtBlockExpression(fakeBlockExpression.text), KtPsiUtil.KtExpressionWrapper {
+
         override fun getStatements(): List<KtExpression> {
             return listOf(expression)
         }
@@ -853,5 +864,13 @@ class KtPsiFactory @JvmOverloads constructor(private val project: Project, val m
         override fun getBaseExpression(): KtExpression {
             return expression
         }
+
+        override fun getParent(): PsiElement = expression.parent
+
+        override fun getPsiOrParent(): KtElement = expression.psiOrParent
+
+        override fun getContainingKtFile() = expression.containingKtFile
+
+        override fun getContainingFile(): PsiFile = expression.containingFile
     }
 }

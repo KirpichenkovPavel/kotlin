@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.jvm.platform
@@ -11,17 +11,17 @@ import org.jetbrains.kotlin.container.useImpl
 import org.jetbrains.kotlin.container.useInstance
 import org.jetbrains.kotlin.load.java.sam.JvmSamConversionTransformer
 import org.jetbrains.kotlin.load.java.sam.SamConversionResolverImpl
-import org.jetbrains.kotlin.resolve.PlatformConfigurator
-import org.jetbrains.kotlin.resolve.calls.checkers.ReifiedTypeParameterSubstitutionChecker
+import org.jetbrains.kotlin.resolve.PlatformConfiguratorBase
 import org.jetbrains.kotlin.resolve.checkers.BigFunctionTypeAvailabilityChecker
 import org.jetbrains.kotlin.resolve.checkers.ExpectedActualDeclarationChecker
 import org.jetbrains.kotlin.resolve.jvm.*
 import org.jetbrains.kotlin.resolve.jvm.checkers.*
+import org.jetbrains.kotlin.resolve.jvm.multiplatform.JavaActualAnnotationArgumentExtractor
 import org.jetbrains.kotlin.synthetic.JavaSyntheticScopes
 import org.jetbrains.kotlin.types.DynamicTypesSettings
 import org.jetbrains.kotlin.types.expressions.FunctionWithBigAritySupport
 
-object JvmPlatformConfigurator : PlatformConfigurator(
+object JvmPlatformConfigurator : PlatformConfiguratorBase(
     DynamicTypesSettings(),
     additionalDeclarationCheckers = listOf(
         JvmNameAnnotationChecker(),
@@ -34,22 +34,25 @@ object JvmPlatformConfigurator : PlatformConfigurator(
         TypeParameterBoundIsNotArrayChecker(),
         JvmSyntheticApplicabilityChecker(),
         StrictfpApplicabilityChecker(),
-        ExpectedActualDeclarationChecker,
+        ExpectedActualDeclarationChecker(listOf(JavaActualAnnotationArgumentExtractor())),
         JvmAnnotationsTargetNonExistentAccessorChecker(),
-        BadInheritedJavaSignaturesChecker
+        BadInheritedJavaSignaturesChecker,
+        JvmMultifileClassStateChecker,
+        SynchronizedOnInlineMethodChecker
     ),
 
     additionalCallCheckers = listOf(
+        MissingBuiltInDeclarationChecker,
         JavaAnnotationCallChecker(),
-        SuspensionPointInSynchronizedCallChecker(),
+        SuspensionPointInsideMutexLockChecker(),
         JavaClassOnCompanionChecker(),
         ProtectedInSuperClassCompanionCallChecker(),
         UnsupportedSyntheticCallableReferenceChecker(),
         SuperCallWithDefaultArgumentsChecker(),
         ProtectedSyntheticExtensionCallChecker,
-        ReifiedTypeParameterSubstitutionChecker(),
         RuntimeAssertionsOnExtensionReceiverCallChecker,
-        ApiVersionIsAtLeastArgumentsChecker
+        ApiVersionIsAtLeastArgumentsChecker,
+        InconsistentOperatorFromJavaCallChecker
     ),
 
     additionalTypeCheckers = listOf(
@@ -61,7 +64,8 @@ object JvmPlatformConfigurator : PlatformConfigurator(
     ),
 
     additionalClassifierUsageCheckers = listOf(
-        BigFunctionTypeAvailabilityChecker
+        BigFunctionTypeAvailabilityChecker,
+        MissingBuiltInDeclarationChecker.ClassifierUsage
     ),
 
     additionalAnnotationCheckers = listOf(

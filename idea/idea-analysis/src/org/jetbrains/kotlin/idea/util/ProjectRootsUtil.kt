@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.util
@@ -29,7 +29,7 @@ import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesManager
 import org.jetbrains.kotlin.idea.decompiler.builtIns.KotlinBuiltInFileType
 import org.jetbrains.kotlin.idea.decompiler.js.KotlinJavaScriptMetaFileType
 import org.jetbrains.kotlin.idea.util.application.runReadAction
-import org.jetbrains.kotlin.script.findScriptDefinition
+import org.jetbrains.kotlin.scripting.definitions.findScriptDefinition
 import kotlin.script.experimental.location.ScriptExpectedLocation
 
 abstract class KotlinBinaryExtension(val fileType: FileType) {
@@ -69,7 +69,7 @@ object ProjectRootsUtil {
         includeScriptDependencies: Boolean, includeScriptsOutsideSourceRoots: Boolean,
         fileIndex: ProjectFileIndex = ProjectFileIndex.SERVICE.getInstance(project)
     ): Boolean {
-        val scriptDefinition = findScriptDefinition(file, project)
+        val scriptDefinition = file.findScriptDefinition(project)
         if (scriptDefinition != null) {
             val scriptScope = scriptDefinition.scriptExpectedLocations
             val includeAll = scriptScope.contains(ScriptExpectedLocation.Everywhere)
@@ -115,13 +115,13 @@ object ProjectRootsUtil {
             if (ProjectRootManager.getInstance(project).fileIndex.isInContent(file) || ScratchUtil.isScratch(file)) {
                 return true
             }
-            return findScriptDefinition(file, project)?.scriptExpectedLocations?.contains(ScriptExpectedLocation.Everywhere) == true
+            return file.findScriptDefinition(project)?.scriptExpectedLocations?.contains(ScriptExpectedLocation.Everywhere) == true
         }
 
         if (!includeLibraryClasses && !includeLibrarySource) return false
 
         // NOTE: the following is a workaround for cases when class files are under library source roots and source files are under class roots
-        val fileType = FileTypeManager.getInstance().getFileTypeByFileName(file.name)
+        val fileType = FileTypeManager.getInstance().getFileTypeByFileName(file.nameSequence)
         val canContainClassFiles = fileType == ArchiveFileType.INSTANCE || file.isDirectory
         val isBinary = fileType.isKotlinBinary()
 
@@ -133,7 +133,11 @@ object ProjectRootsUtil {
         }
         if (includeLibrarySource && !isBinary) {
             if (fileIndex.isInLibrarySource(file)) return true
-            if (scriptConfigurationManager?.getAllLibrarySourcesScope()?.contains(file) == true) return true
+            if (scriptConfigurationManager?.getAllLibrarySourcesScope()?.contains(file) == true &&
+                !fileIndex.isInSourceContentWithoutInjected(file)
+            ) {
+                return true
+            }
         }
 
         return false

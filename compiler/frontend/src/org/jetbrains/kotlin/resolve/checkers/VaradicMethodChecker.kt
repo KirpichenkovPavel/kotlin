@@ -17,6 +17,9 @@ import org.jetbrains.kotlin.resolve.calls.checkers.CallCheckerContext
 import org.jetbrains.kotlin.resolve.calls.model.ExpressionValueArgument
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedValueArgument
+import org.jetbrains.kotlin.resolve.calls.util.isTypeIndex
+import org.jetbrains.kotlin.resolve.calls.util.targetedVariadicParameterOfTypeIndex
+import org.jetbrains.kotlin.resolve.calls.util.typeIndexAnnotation
 import org.jetbrains.kotlin.resolve.constants.IntegerValueTypeConstant
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 
@@ -66,9 +69,9 @@ class VariadicMethodCallChecker : CallChecker {
         valueArgument: ResolvedValueArgument,
         context: CallCheckerContext
     ): Boolean {
-        val typeIndexFromParameter = valueParameter.type.typeIndex()
+        val typeIndexFromParameter = valueParameter.type.typeIndexAnnotation()
         val typeIndexFromArgument = valueArgument.arguments.singleOrNull()
-            ?.getArgumentExpression()?.getType(context.trace.bindingContext)?.typeIndex()
+            ?.getArgumentExpression()?.getType(context.trace.bindingContext)?.typeIndexAnnotation()
         return typeIndexFromArgument?.targetedVariadicParameterOfTypeIndex() == typeIndexFromParameter?.targetedVariadicParameterOfTypeIndex()
     }
 }

@@ -1,19 +1,16 @@
 // !DIAGNOSTICS: -UNUSED_EXPRESSION -DEBUG_INFO_SMARTCAST
-// !WITH_BASIC_TYPES
-// !WITH_CLASSES
-// !WITH_FUNCTIONS
 
 /*
- KOTLIN DIAGNOSTICS SPEC TEST (POSITIVE)
-
- SECTIONS: when-expression
- PARAGRAPH: 3
- SENTENCE: [1] When expression without bound value (the form where the expression enclosed in parantheses is absent) evaluates one of the many different expressions based on corresponding conditions present in the same when entry.
- NUMBER: 1
- DESCRIPTION: 'When' without bound value and with different variants of expressions in the control structure body.
+ * KOTLIN DIAGNOSTICS SPEC TEST (POSITIVE)
+ *
+ * SPEC VERSION: 0.1-draft
+ * PLACE: when-expression -> paragraph 3 -> sentence 1
+ * NUMBER: 1
+ * DESCRIPTION: 'When' without bound value and with different variants of expressions in the control structure body.
+ * HELPERS: typesProvider, classes, functions
  */
 
-// CASE DESCRIPTION: 'When' with control structure body as literals.
+// TESTCASE NUMBER: 1
 fun case_1(value_1: Int) {
     when {
         value_1 == 1 -> true
@@ -25,28 +22,28 @@ fun case_1(value_1: Int) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as arithmetic expressions.
-fun case_2(value_1: Int, value_2: Byte, value_3: _BasicTypesProvider) {
+// TESTCASE NUMBER: 2
+fun case_2(value_1: Int, value_2: Byte, value_3: TypesProvider) {
     when {
         value_1 == 1 -> -.09 % 10L
         value_1 == 3 -> value_2 / -5
-        value_1 == 2 -> value_3.getChar(99) - 11 + 90
+        value_1 == 2 -> value_3.getChar() - 11 + 90
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as boolean expressions (logical, equality and comparison).
+// TESTCASE NUMBER: 3
 fun case_3(value_1: Int, value_2: Boolean, value_3: Long) {
     when {
         value_1 == 1 -> value_2
         value_1 == 2 -> !value_2
         value_1 == 3 -> getBoolean() && value_2
-        value_1 == 5 -> getChar(10) != 'a'
-        value_1 == 6 -> getList() === getAny()
+        value_1 == 5 -> getChar() != 'a'
+        value_1 == 6 -> Out<Int>() === getAny()
         value_1 == 7 -> value_3 <= 11
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as concatenations.
+// TESTCASE NUMBER: 4
 fun case_4(value_1: Int, value_2: String, value_3: String) {
     when {
         value_1 == 1 -> "..." + value_2 + "" + "$value_3" + "..."
@@ -54,7 +51,7 @@ fun case_4(value_1: Int, value_2: String, value_3: String) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as when expression.
+// TESTCASE NUMBER: 5
 fun case_5(value_1: Int, value_2: Int, value_3: Boolean?) {
     when {
         value_1 == 1 -> when {
@@ -80,7 +77,7 @@ fun case_5(value_1: Int, value_2: Int, value_3: Boolean?) {
     }
 }
 
-// CASE DESCRIPTION: 'When' as expression with control structure body as when expression (must be exhaustive).
+// TESTCASE NUMBER: 6
 fun case_6(value_1: Int, value_2: Int, value_3: Boolean?) = when {
     value_1 == 1 -> when {
         value_2 > 1000 -> 1
@@ -94,7 +91,7 @@ fun case_6(value_1: Int, value_2: Int, value_3: Boolean?) = when {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as if expression.
+// TESTCASE NUMBER: 7
 fun case_7(value_1: Int, value_2: Int, value_3: Boolean?) {
     when {
         value_1 == 1 -> if (value_2 > 1000) "1"
@@ -109,7 +106,7 @@ fun case_7(value_1: Int, value_2: Int, value_3: Boolean?) {
     }
 }
 
-// CASE DESCRIPTION: 'When' as expression with control structure body as if expression (must be exhaustive).
+// TESTCASE NUMBER: 8
 fun case_8(value_1: Int, value_2: Int) = when {
     value_1 == 1 -> if (value_2 > 1000) "1"
         else "2"
@@ -118,14 +115,14 @@ fun case_8(value_1: Int, value_2: Int) = when {
         else "4"
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as try expression.
+// TESTCASE NUMBER: 9
 fun case_9(value_1: Int, value_2: String, value_3: String) = when {
     value_1 == 1 -> <!IMPLICIT_CAST_TO_ANY!>try { 4 } catch (e: Exception) { 5 }<!>
     value_1 == 2 -> <!IMPLICIT_CAST_TO_ANY!>try { throw Exception() } catch (e: Exception) { value_2 }<!>
     else -> <!IMPLICIT_CAST_TO_ANY!>try { throw Exception() } catch (e: Exception) { {value_3} } finally { }<!>
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as elvis operator expression.
+// TESTCASE NUMBER: 10
 fun case_10(value_1: Int, value_2: String?, value_3: String?) {
     when {
         value_1 == 1 -> value_2 ?: true
@@ -134,7 +131,7 @@ fun case_10(value_1: Int, value_2: String?, value_3: String?) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as range expression.
+// TESTCASE NUMBER: 11
 fun case_11(value_1: Int) {
     when {
         value_1 == 1 -> 1..10
@@ -143,17 +140,17 @@ fun case_11(value_1: Int) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as cast expression.
+// TESTCASE NUMBER: 12
 fun case_12(value_1: Int, value_2: Collection<Int>, value_3: Collection<Int>?) {
     when {
-        value_1 == 1 -> value_2 as MutableList<Int>
-        value_1 == 2 -> value_2 as? MutableList<Int>
+        value_1 == 1 -> value_2 as List<Int>
+        value_1 == 2 -> value_2 as? List<Int>
         value_1 == 3 -> value_3 <!UNCHECKED_CAST!>as? MutableMap<Int, Int><!>
         value_1 == 4 -> (value_2 <!UNCHECKED_CAST!>as? Map<Int, Int><!>) as MutableMap<Int, Int>
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as prefix operator expression.
+// TESTCASE NUMBER: 13
 fun case_13(value_1: Int, value_2: Int, value_3: Int, value_4: Boolean) {
     var mutablevalue_2 = value_2
     var mutablevalue_3 = value_3
@@ -165,7 +162,7 @@ fun case_13(value_1: Int, value_2: Int, value_3: Int, value_4: Boolean) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as postfix operator expression.
+// TESTCASE NUMBER: 14
 fun case_14(value_1: Int, value_2: Int, value_3: Int, value_4: Boolean?) {
     var mutablevalue_2 = value_2
     var mutablevalue_3 = value_3
@@ -177,7 +174,7 @@ fun case_14(value_1: Int, value_2: Int, value_3: Int, value_4: Boolean?) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as indexing expression.
+// TESTCASE NUMBER: 15
 fun case_15(value_1: Int, value_2: List<Int>, value_3: List<List<List<List<Int>>>>) {
     when {
         value_1 == 1 -> value_2[0]
@@ -185,12 +182,12 @@ fun case_15(value_1: Int, value_2: List<Int>, value_3: List<List<List<List<Int>>
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as call expression.
-fun case_16(value_1: Int, value_2: _Class, value_3: _Class?, value_4: Int) {
+// TESTCASE NUMBER: 16
+fun case_16(value_1: Int, value_2: Class, value_3: Class?, value_4: Int) {
     fun __fun_1(): () -> Unit { return fun() { } }
 
     when {
-        value_1 == 1 -> _funWithoutArgs()
+        value_1 == 1 -> funWithoutArgs()
         value_1 == 2 -> __fun_1()()
         value_1 == 3 -> value_2.fun_2(value_4)
         value_1 == 4 -> value_3?.fun_2(value_4)
@@ -198,8 +195,8 @@ fun case_16(value_1: Int, value_2: _Class, value_3: _Class?, value_4: Int) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as property access expression.
-fun case_17(value_1: Int, value_2: _Class, value_3: _Class?) {
+// TESTCASE NUMBER: 17
+fun case_17(value_1: Int, value_2: Class, value_3: Class?) {
     when {
         value_1 == 1 -> value_2.prop_1
         value_1 == 2 -> value_3?.prop_1
@@ -208,7 +205,7 @@ fun case_17(value_1: Int, value_2: _Class, value_3: _Class?) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as fun literal.
+// TESTCASE NUMBER: 18
 fun case_18(value_1: Int) {
     val fun_1 = fun(): Int { return 0 }
 
@@ -220,7 +217,7 @@ fun case_18(value_1: Int) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as lambda literal.
+// TESTCASE NUMBER: 19
 fun case_19(value_1: Int): () -> Any {
     val lambda_1 = { 0 }
 
@@ -233,7 +230,7 @@ fun case_19(value_1: Int): () -> Any {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as object literal.
+// TESTCASE NUMBER: 20
 fun case_20(value_1: Int) {
     val object_1 = object {
         val prop_1 = 1
@@ -249,7 +246,7 @@ fun case_20(value_1: Int) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as this expression.
+// TESTCASE NUMBER: 21
 class A {
     val prop_1 = 1
     val lambda_1 = { 1 }
@@ -269,7 +266,7 @@ class A {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as throw expression.
+// TESTCASE NUMBER: 22
 fun case_22(value_1: Int) {
     when {
         value_1 == 1 -> throw Exception()
@@ -277,7 +274,7 @@ fun case_22(value_1: Int) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as return expression.
+// TESTCASE NUMBER: 23
 fun case_23(value_1: Int) {
     fun r_1() {
         when {
@@ -296,7 +293,7 @@ fun case_23(value_1: Int) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as continue expression.
+// TESTCASE NUMBER: 24
 fun case_24(value_1: Int) {
     loop1@ while (true) {
         loop2@ while (true) {
@@ -308,7 +305,7 @@ fun case_24(value_1: Int) {
     }
 }
 
-// CASE DESCRIPTION: 'When' with control structure body as break expression.
+// TESTCASE NUMBER: 25
 fun case_25(value_1: Int) {
     loop1@ while (true) {
         loop2@ while (true) {

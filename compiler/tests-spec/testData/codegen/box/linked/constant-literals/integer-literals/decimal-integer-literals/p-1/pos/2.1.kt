@@ -1,11 +1,10 @@
 /*
- KOTLIN CODEGEN BOX SPEC TEST (POSITIVE)
-
- SECTIONS: constant-literals, integer-literals, decimal-integer-literals
- PARAGRAPH: 1
- SENTENCE: [2] Digits may be separated by an underscore symbol, but no underscore can be placed before the first digit or after the last one.
- NUMBER: 1
- DESCRIPTION: Sequences with decimal digit symbols separated by underscores.
+ * KOTLIN CODEGEN BOX SPEC TEST (POSITIVE)
+ *
+ * SPEC VERSION: 0.1-draft
+ * PLACE: constant-literals, integer-literals, decimal-integer-literals -> paragraph 1 -> sentence 2
+ * NUMBER: 1
+ * DESCRIPTION: Sequences with decimal digit symbols separated by underscores.
  */
 
 val value_1 = 1234_5678_90

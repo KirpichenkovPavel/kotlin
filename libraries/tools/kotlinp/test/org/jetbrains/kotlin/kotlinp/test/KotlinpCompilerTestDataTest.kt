@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.kotlinp.test
@@ -12,7 +12,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
 import java.io.File
-import kotlin.coroutines.experimental.buildSequence
 
 @RunWith(Parameterized::class)
 class KotlinpCompilerTestDataTest(private val file: File) {
@@ -41,15 +40,15 @@ class KotlinpCompilerTestDataTest(private val file: File) {
                 "compiler/testData/serialization/builtinsSerializer"
             )
 
-            return buildSequence<Array<*>> {
+            return mutableListOf<Array<*>>().apply {
                 for (baseDir in baseDirs) {
                     for (file in File(baseDir).walkTopDown()) {
                         if (file.extension == "kt") {
-                            yield(arrayOf(file))
+                            add(arrayOf(file))
                         }
                     }
                 }
-            }.toList()
+            }
         }
     }
 }

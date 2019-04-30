@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.intentions
@@ -58,12 +58,14 @@ import org.jetbrains.kotlin.types.TypeUtils
 import org.jetbrains.kotlin.types.typeUtil.isUnit
 import javax.swing.JComponent
 
+@Suppress("DEPRECATION")
 class UsePropertyAccessSyntaxInspection : IntentionBasedInspection<KtCallExpression>(UsePropertyAccessSyntaxIntention::class),
     CleanupLocalInspectionTool {
 
     val fqNameList = mutableListOf<FqNameUnsafe>()
 
-    private var fqNameStrings: List<String>
+    @Suppress("CAN_BE_PRIVATE")
+    var fqNameStrings: List<String>
         get() = fqNameList.map { it.asString() }
         set(value) {
             fqNameList.clear()
@@ -78,6 +80,19 @@ class UsePropertyAccessSyntaxInspection : IntentionBasedInspection<KtCallExpress
         val list = NotPropertyListPanel(fqNameList)
         return LabeledComponent.create(list, "Excluded methods")
     }
+
+    override fun inspectionTarget(element: KtCallExpression): PsiElement? {
+        return element.calleeExpression
+    }
+
+    override fun inspectionProblemText(element: KtCallExpression): String? {
+        val accessor = when (element.valueArguments.size) {
+            0 -> "getter"
+            1 -> "setter"
+            else -> null
+        }
+        return "Use of $accessor method instead of property access syntax"
+    }
 }
 
 
@@ -90,17 +105,20 @@ class NotPropertiesServiceImpl(private val project: Project) : NotPropertiesServ
 
     companion object {
 
-        val default = listOf(
+        private val atomicMethods = listOf(
+            "getAndIncrement", "getAndDecrement", "getAcquire", "getOpaque", "getPlain"
+        )
+
+        private val atomicClasses = listOf("AtomicInteger", "AtomicLong")
+
+        val default: List<String> = listOf(
             "java.net.Socket.getInputStream",
             "java.net.Socket.getOutputStream",
             "java.net.URLConnection.getInputStream",
-            "java.net.URLConnection.getOutputStream",
-            "java.util.concurrent.atomic.AtomicInteger.getAndIncrement",
-            "java.util.concurrent.atomic.AtomicInteger.getAndDecrement",
-            "java.util.concurrent.atomic.AtomicLong.getAndIncrement",
-            "java.util.concurrent.atomic.AtomicLong.getAndDecrement"
-        )
-
+            "java.net.URLConnection.getOutputStream"
+        ) + atomicClasses.flatMap { klass ->
+            atomicMethods.map { method -> "java.util.concurrent.atomic.$klass.$method" }
+        }
 
         val USE_PROPERTY_ACCESS_INSPECTION: Key<UsePropertyAccessSyntaxInspection> = Key.create("UsePropertyAccessSyntax")
     }
@@ -243,7 +261,7 @@ class UsePropertyAccessSyntaxIntention :
         var callToConvert = callExpression
         if (callParent is KtDeclarationWithBody && call == callParent.bodyExpression) {
             ConvertToBlockBodyIntention.convert(callParent)
-            val firstStatement = (callParent.bodyExpression as? KtBlockExpression)?.statements?.first()
+            val firstStatement = callParent.bodyBlockExpression?.statements?.first()
             callToConvert = (firstStatement as? KtQualifiedExpression)?.selectorExpression as? KtCallExpression
                     ?: firstStatement as? KtCallExpression
                     ?: throw IllegalStateException("Unexpected contents of function after conversion: ${callParent.text}")

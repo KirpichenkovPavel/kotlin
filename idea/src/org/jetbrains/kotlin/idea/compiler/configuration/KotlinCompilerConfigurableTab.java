@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.compiler.configuration;
@@ -9,7 +9,6 @@ import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.components.ServiceManager;
 import com.intellij.openapi.fileChooser.FileChooserDescriptor;
-import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleManager;
 import com.intellij.openapi.options.Configurable;
 import com.intellij.openapi.options.ConfigurationException;
@@ -40,6 +39,7 @@ import org.jetbrains.kotlin.idea.PluginStartupComponent;
 import org.jetbrains.kotlin.idea.facet.DescriptionListCellRenderer;
 import org.jetbrains.kotlin.idea.facet.KotlinFacet;
 import org.jetbrains.kotlin.idea.roots.RootUtilsKt;
+import org.jetbrains.kotlin.idea.util.CidrUtil;
 import org.jetbrains.kotlin.idea.util.application.ApplicationUtilsKt;
 import org.jetbrains.kotlin.platform.IdePlatform;
 import org.jetbrains.kotlin.platform.IdePlatformKind;
@@ -48,8 +48,6 @@ import org.jetbrains.kotlin.platform.impl.JvmIdePlatformUtil;
 import org.jetbrains.kotlin.platform.impl.JvmIdePlatformKind;
 
 import javax.swing.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.util.*;
 
 public class KotlinCompilerConfigurableTab implements SearchableConfigurable, Configurable.NoScroll{
@@ -134,18 +132,57 @@ public class KotlinCompilerConfigurableTab implements SearchableConfigurable, Co
         warningLabel.setIcon(AllIcons.General.WarningDialog);
 
         if (isProjectSettings) {
-            languageVersionComboBox.addActionListener(
-                    new ActionListener() {
-                        @Override
-                        public void actionPerformed(ActionEvent e) {
-                            onLanguageLevelChanged(getSelectedLanguageVersionView());
-                        }
-                    }
-            );
+            languageVersionComboBox.addActionListener(e -> onLanguageLevelChanged(getSelectedLanguageVersionView()));
         }
 
         additionalArgsOptionsField.attachLabel(additionalArgsLabel);
 
+        fillLanguageAndAPIVersionList();
+        fillCoroutineSupportList();
+
+        if (CidrUtil.isRunningInCidrIde()) {
+            keepAliveCheckBox.setVisible(false);
+            k2jvmPanel.setVisible(false);
+            k2jsPanel.setVisible(false);
+        }
+        else {
+            initializeNonCidrSettings(isMultiEditor);
+        }
+
+        reportWarningsCheckBox.setThirdStateEnabled(isMultiEditor);
+
+        if (isProjectSettings) {
+            List<String> modulesOverridingProjectSettings = ArraysKt.mapNotNull(
+                    ModuleManager.getInstance(project).getModules(),
+                    module -> {
+                        KotlinFacet facet = KotlinFacet.Companion.get(module);
+                        if (facet == null) return null;
+                        KotlinFacetSettings facetSettings = facet.getConfiguration().getSettings();
+                        if (facetSettings.getUseProjectSettings()) return null;
+                        return module.getName();
+                    }
+            );
+            CollectionsKt.sort(modulesOverridingProjectSettings);
+            if (!modulesOverridingProjectSettings.isEmpty()) {
+                warningLabel.setVisible(true);
+                warningLabel.setText(buildOverridingModulesWarning(modulesOverridingProjectSettings));
+            }
+        }
+    }
+
+    @SuppressWarnings("unused")
+    public KotlinCompilerConfigurableTab(Project project) {
+        this(project,
+             (CommonCompilerArguments) KotlinCommonCompilerArgumentsHolder.Companion.getInstance(project).getSettings().unfrozen(),
+             (K2JSCompilerArguments) Kotlin2JsCompilerArgumentsHolder.Companion.getInstance(project).getSettings().unfrozen(),
+             (K2JVMCompilerArguments) Kotlin2JvmCompilerArgumentsHolder.Companion.getInstance(project).getSettings().unfrozen(),
+             (CompilerSettings) KotlinCompilerSettings.Companion.getInstance(project).getSettings().unfrozen(),
+             ServiceManager.getService(project, KotlinCompilerWorkspaceSettings.class),
+             true,
+             false);
+    }
+
+    private void initializeNonCidrSettings(boolean isMultiEditor) {
         setupFileChooser(labelForOutputPrefixFile, outputPrefixFile,
                          KotlinBundle.message("kotlin.compiler.js.option.output.prefix.browse.title"),
                          true);
@@ -159,8 +196,12 @@ public class KotlinCompilerConfigurableTab implements SearchableConfigurable, Co
         fillModuleKindList();
         fillSourceMapSourceEmbeddingList();
         fillJvmVersionList();
-        fillLanguageAndAPIVersionList();
-        fillCoroutineSupportList();
+
+        generateSourceMapsCheckBox.setThirdStateEnabled(isMultiEditor);
+        generateSourceMapsCheckBox.addActionListener(event -> sourceMapPrefix.setEnabled(generateSourceMapsCheckBox.isSelected()));
+
+        copyRuntimeFilesCheckBox.setThirdStateEnabled(isMultiEditor);
+        keepAliveCheckBox.setThirdStateEnabled(isMultiEditor);
 
         if (compilerWorkspaceSettings == null) {
             keepAliveCheckBox.setVisible(false);
@@ -168,47 +209,7 @@ public class KotlinCompilerConfigurableTab implements SearchableConfigurable, Co
             enableIncrementalCompilationForJsCheckBox.setVisible(false);
         }
 
-        reportWarningsCheckBox.setThirdStateEnabled(isMultiEditor);
-        generateSourceMapsCheckBox.setThirdStateEnabled(isMultiEditor);
-        copyRuntimeFilesCheckBox.setThirdStateEnabled(isMultiEditor);
-        keepAliveCheckBox.setThirdStateEnabled(isMultiEditor);
-
-        if (isProjectSettings) {
-            List<String> modulesOverridingProjectSettings = ArraysKt.mapNotNull(
-                    ModuleManager.getInstance(project).getModules(),
-                    new Function1<Module, String>() {
-                        @Override
-                        public String invoke(Module module) {
-                            KotlinFacet facet = KotlinFacet.Companion.get(module);
-                            if (facet == null) return null;
-                            KotlinFacetSettings facetSettings = facet.getConfiguration().getSettings();
-                            if (facetSettings.getUseProjectSettings()) return null;
-                            return module.getName();
-                        }
-                    }
-            );
-            CollectionsKt.sort(modulesOverridingProjectSettings);
-            if (!modulesOverridingProjectSettings.isEmpty()) {
-                warningLabel.setVisible(true);
-                warningLabel.setText(buildOverridingModulesWarning(modulesOverridingProjectSettings));
-            }
-        }
-
-        generateSourceMapsCheckBox.addActionListener(event -> sourceMapPrefix.setEnabled(generateSourceMapsCheckBox.isSelected()));
-
         updateOutputDirEnabled();
-    }
-
-    @SuppressWarnings("unused")
-    public KotlinCompilerConfigurableTab(Project project) {
-        this(project,
-             (CommonCompilerArguments) KotlinCommonCompilerArgumentsHolder.Companion.getInstance(project).getSettings().unfrozen(),
-             (K2JSCompilerArguments) Kotlin2JsCompilerArgumentsHolder.Companion.getInstance(project).getSettings().unfrozen(),
-             (K2JVMCompilerArguments) Kotlin2JvmCompilerArgumentsHolder.Companion.getInstance(project).getSettings().unfrozen(),
-             (CompilerSettings) KotlinCompilerSettings.Companion.getInstance(project).getSettings().unfrozen(),
-             ServiceManager.getService(project, KotlinCompilerWorkspaceSettings.class),
-             true,
-             false);
     }
 
     private static int calculateNameCountToShowInWarning(List<String> allNames) {

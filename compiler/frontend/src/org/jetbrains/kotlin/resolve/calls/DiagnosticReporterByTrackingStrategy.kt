@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls
@@ -25,13 +25,15 @@ import org.jetbrains.kotlin.resolve.constants.CompileTimeConstantChecker
 import org.jetbrains.kotlin.resolve.constants.evaluate.ConstantExpressionEvaluator
 import org.jetbrains.kotlin.resolve.descriptorUtil.module
 import org.jetbrains.kotlin.resolve.scopes.receivers.ExpressionReceiver
+import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 
 class DiagnosticReporterByTrackingStrategy(
     val constantExpressionEvaluator: ConstantExpressionEvaluator,
     val context: BasicCallResolutionContext,
     val psiKotlinCall: PSIKotlinCall,
-    val dataFlowValueFactory: DataFlowValueFactory
+    val dataFlowValueFactory: DataFlowValueFactory,
+    val allDiagnostics: List<KotlinCallDiagnostic>
 ) : DiagnosticReporter {
     private val trace = context.trace as TrackingBindingTrace
     private val tracingStrategy: TracingStrategy get() = psiKotlinCall.tracingStrategy
@@ -50,6 +52,10 @@ class DiagnosticReporterByTrackingStrategy(
             )
             InstantiationOfAbstractClass::class.java -> tracingStrategy.instantiationOfAbstractClass(trace)
             AbstractSuperCall::class.java -> tracingStrategy.abstractSuperCall(trace)
+            NonApplicableCallForBuilderInferenceDiagnostic::class.java -> {
+                val reportOn = (diagnostic as NonApplicableCallForBuilderInferenceDiagnostic).kotlinCall
+                trace.reportDiagnosticOnce(Errors.NON_APPLICABLE_CALL_FOR_BUILDER_INFERENCE.on(reportOn.psiKotlinCall.psiCall.callElement))
+            }
         }
     }
 
@@ -208,33 +214,39 @@ class DiagnosticReporterByTrackingStrategy(
                     val expression = it.psiExpression ?: return
                     val deparenthesized = KtPsiUtil.safeDeparenthesize(expression)
                     if (reportConstantTypeMismatch(constraintError, deparenthesized)) return
-                    trace.report(Errors.TYPE_MISMATCH.on(deparenthesized, constraintError.upperType, constraintError.lowerType))
+                    trace.report(Errors.TYPE_MISMATCH.on(deparenthesized, constraintError.upperKotlinType, constraintError.lowerKotlinType))
                 }
 
                 (position as? ExpectedTypeConstraintPosition)?.let {
                     val call = it.topLevelCall.psiKotlinCall.psiCall.callElement.safeAs<KtExpression>()
                     reportIfNonNull(call) {
-                        trace.report(Errors.TYPE_MISMATCH.on(it, constraintError.upperType, constraintError.lowerType))
+                        trace.report(Errors.TYPE_MISMATCH.on(it, constraintError.upperKotlinType, constraintError.lowerKotlinType))
                     }
                 }
 
                 (position as? ExplicitTypeParameterConstraintPosition)?.let {
                     val typeArgumentReference = (it.typeArgument as SimpleTypeArgumentImpl).typeReference
-                    trace.report(UPPER_BOUND_VIOLATED.on(typeArgumentReference, constraintError.upperType, constraintError.lowerType))
+                    trace.report(UPPER_BOUND_VIOLATED.on(typeArgumentReference, constraintError.upperKotlinType, constraintError.lowerKotlinType))
                 }
 
                 (position as? VariadicTypeParameterConstraintPosition)?.let {
                     val call = it.topLevelCall.psiKotlinCall.psiCall.callElement.safeAs<KtExpression>()
                     reportIfNonNull(call) {
-                        trace.report(Errors.TYPE_MISMATCH.on(it, constraintError.upperType, constraintError.lowerType))
+                        trace.report(Errors.TYPE_MISMATCH.on(it, constraintError.upperKotlinType, constraintError.lowerKotlinType))
                     }
                 }
             }
+
             CapturedTypeFromSubtyping::class.java -> {
                 val capturedError = diagnostic as CapturedTypeFromSubtyping
-                (capturedError.position as? ArgumentConstraintPosition)?.let {
+                val position = capturedError.position
+                val argumentPosition =
+                    position.safeAs<ArgumentConstraintPosition>()
+                        ?: position.safeAs<IncorporationConstraintPosition>()?.from.safeAs<ArgumentConstraintPosition>()
+
+                argumentPosition?.let {
                     val expression = it.argument.psiExpression ?: return
-                    trace.report(
+                    trace.reportDiagnosticOnce(
                         NEW_INFERENCE_ERROR.on(
                             expression,
                             "Capture type from subtyping ${capturedError.constraintType} for variable ${capturedError.typeVariable}"
@@ -244,13 +256,18 @@ class DiagnosticReporterByTrackingStrategy(
             }
 
             NotEnoughInformationForTypeParameter::class.java -> {
+                if (allDiagnostics.any {it is ConstrainingTypeIsError || it is NewConstraintError || it is WrongCountOfTypeArguments})
+                    return
+
                 val error = diagnostic as NotEnoughInformationForTypeParameter
-                trace.reportDiagnosticOnce(
-                    NEW_INFERENCE_ERROR.on(
-                        psiKotlinCall.psiCall.callElement,
-                        "can't infer parameter ${error.typeVariable}"
-                    )
-                )
+                val call = error.resolvedAtom.atom?.safeAs<PSIKotlinCall>()?.psiCall ?: call
+                val expression = call.calleeExpression ?: return
+                val typeVariableName = when (val typeVariable = error.typeVariable) {
+                    is TypeVariableFromCallableDescriptor -> typeVariable.originalTypeParameter.name.asString()
+                    is TypeVariableForLambdaReturnType -> "return type of lambda"
+                    else -> error("Unsupported type variable: $typeVariable")
+                }
+                trace.reportDiagnosticOnce(NEW_INFERENCE_NO_INFORMATION_FOR_PARAMETER.on(expression, typeVariableName))
             }
         }
     }
@@ -260,10 +277,14 @@ class DiagnosticReporterByTrackingStrategy(
             val module = context.scope.ownerDescriptor.module
             val constantValue = constantExpressionEvaluator.evaluateToConstantValue(expression, trace, context.expectedType)
             val hasConstantTypeError = CompileTimeConstantChecker(context, module, true)
-                .checkConstantExpressionType(constantValue, expression, constraintError.upperType)
+                .checkConstantExpressionType(constantValue, expression, constraintError.upperKotlinType)
             if (hasConstantTypeError) return true
         }
         return false
     }
 
 }
+
+
+val NewConstraintError.upperKotlinType get() = upperType as KotlinType
+val NewConstraintError.lowerKotlinType get() = lowerType as KotlinType

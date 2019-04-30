@@ -30,8 +30,8 @@ import org.jetbrains.org.objectweb.asm.Type
 import org.jetbrains.org.objectweb.asm.commons.InstructionAdapter
 
 class SerializerCodegenImpl(
-        private val codegen: ImplementationBodyCodegen,
-        serializableClass: ClassDescriptor
+    private val codegen: ImplementationBodyCodegen,
+    serializableClass: ClassDescriptor
 ) : SerializerCodegen(codegen.descriptor, codegen.bindingContext) {
 
 
@@ -40,6 +40,9 @@ class SerializerCodegenImpl(
     private val serializerAsmType = codegen.typeMapper.mapClass(codegen.descriptor)
     private val serializableAsmType = codegen.typeMapper.mapClass(serializableClass)
 
+    // if we have type parameters, descriptor initializing must be performed in constructor
+    private val staticDescriptor = serializableDescriptor.declaredTypeParameters.isEmpty()
+
     companion object {
         fun generateSerializerExtensions(codegen: ImplementationBodyCodegen) {
             val serializableClass = getSerializableClassDescriptorBySerializer(codegen.descriptor) ?: return
@@ -47,7 +50,7 @@ class SerializerCodegenImpl(
         }
     }
 
-    override fun generateGenericFieldsAndConstructor(typedConstructorDescriptor: ConstructorDescriptor) {
+    override fun generateGenericFieldsAndConstructor(typedConstructorDescriptor: ClassConstructorDescriptor) {
         serializableDescriptor.declaredTypeParameters.forEachIndexed { i, _ ->
             codegen.v.newField(
                 OtherOrigin(codegen.myClass.psiOrParent), ACC_PRIVATE or ACC_SYNTHETIC,
@@ -55,64 +58,89 @@ class SerializerCodegenImpl(
             )
         }
 
-        codegen.generateMethod(typedConstructorDescriptor) { _, _ ->
+        var locals: Int = 0
+        codegen.generateMethod(typedConstructorDescriptor) { _, exprGen ->
             load(0, serializerAsmType)
             invokespecial("java/lang/Object", "<init>", "()V", false)
             serializableDescriptor.declaredTypeParameters.forEachIndexed { i, _ ->
                 load(0, serializerAsmType)
-                load(i+1, kSerializerType)
+                load(++locals, kSerializerType)
                 putfield(serializerAsmType.internalName, "$typeArgPrefix$i", kSerializerType.descriptor)
             }
+            if (!staticDescriptor) exprGen.generateSerialDescriptor(++locals, false)
             areturn(Type.VOID_TYPE)
         }
 
     }
 
-    override fun generateSerialDesc() {
-        codegen.v.newField(OtherOrigin(codegen.myClass.psiOrParent), ACC_PRIVATE or ACC_STATIC or ACC_FINAL or ACC_SYNTHETIC,
-                           serialDescField, descType.descriptor, null, null)
-        // todo: lazy initialization of $$serialDesc that is performed only when save/load is invoked first time
-        val expr = codegen.createOrGetClInitCodegen()
-        with(expr.v) {
-            val classDescVar = 0
-            anew(descImplType)
-            dup()
-            aconst(serialName)
-            invokespecial(descImplType.internalName, "<init>", "(Ljava/lang/String;)V", false)
-            store(classDescVar, descImplType)
-            for (property in orderedProperties) {
-                if (property.transient) continue
-                load(classDescVar, descImplType)
-                aconst(property.name)
-                invokevirtual(descImplType.internalName, CallingConventions.addElement, "(Ljava/lang/String;)V", false)
-                // pushing annotations
-                for ((annotationClass, args, consParams) in property.annotationsWithArguments) {
-                    if (args.size != consParams.size) throw IllegalArgumentException("Can't use arguments with defaults for serializable annotations yet")
-                    load(classDescVar, descImplType)
-                    expr.generateSyntheticAnnotationOnStack(annotationClass, args, consParams)
-                    invokevirtual(
-                        descImplType.internalName,
-                        CallingConventions.addAnnotation,
-                        "(Ljava/lang/annotation/Annotation;)V",
-                        false
-                    )
-                }
-            }
-            // add annotations on class itself
-            for ((annotationClass, args, consParams) in serializableDescriptor.annotationsWithArguments()) {
+    private fun ExpressionCodegen.generateSerialDescriptor(descriptorVar: Int, isStatic: Boolean) = with(v) {
+        anew(descImplType)
+        dup()
+        aconst(serialName)
+        if (isStatic) {
+            assert(serializerDescriptor.kind == ClassKind.OBJECT) { "Serializer for type without type parameters must be an object" }
+            // static descriptor means serializer is an object. it is safer to get it from correct field
+            if (isGeneratedSerializer)
+                StackValue.singleton(serializerDescriptor, codegen.typeMapper).put(generatedSerializerType, this)
+            else
+                aconst(null)
+        } else {
+            load(0, serializerAsmType)
+        }
+        invokespecial(descImplType.internalName, "<init>", "(Ljava/lang/String;${generatedSerializerType.descriptor})V", false)
+        store(descriptorVar, descImplType)
+        for (property in serializableProperties) {
+            if (property.transient) continue
+            load(descriptorVar, descImplType)
+            aconst(property.name)
+            iconst(if (property.optional) 1 else 0)
+            invokevirtual(descImplType.internalName, CallingConventions.addElement, "(Ljava/lang/String;Z)V", false)
+            // pushing annotations
+            for ((annotationClass, args, consParams) in property.annotationsWithArguments) {
                 if (args.size != consParams.size) throw IllegalArgumentException("Can't use arguments with defaults for serializable annotations yet")
-                load(classDescVar, descImplType)
-                expr.generateSyntheticAnnotationOnStack(annotationClass, args, consParams)
+                load(descriptorVar, descImplType)
+                generateSyntheticAnnotationOnStack(annotationClass, args, consParams)
                 invokevirtual(
                     descImplType.internalName,
-                    CallingConventions.addClassAnnotation,
+                    CallingConventions.addAnnotation,
                     "(Ljava/lang/annotation/Annotation;)V",
                     false
                 )
             }
-            load(classDescVar, descImplType)
-            putstatic(serializerAsmType.internalName, serialDescField, descType.descriptor)
         }
+        // add annotations on class itself
+        for ((annotationClass, args, consParams) in serializableDescriptor.annotationsWithArguments()) {
+            if (args.size != consParams.size) throw IllegalArgumentException("Can't use arguments with defaults for serializable annotations yet")
+            load(descriptorVar, descImplType)
+            generateSyntheticAnnotationOnStack(annotationClass, args, consParams)
+            invokevirtual(
+                descImplType.internalName,
+                CallingConventions.addClassAnnotation,
+                "(Ljava/lang/annotation/Annotation;)V",
+                false
+            )
+        }
+        if (isStatic) {
+            load(descriptorVar, descImplType)
+            putstatic(serializerAsmType.internalName, serialDescField, descType.descriptor)
+        } else {
+            load(0, serializerAsmType)
+            load(descriptorVar, descImplType)
+            putfield(serializerAsmType.internalName, serialDescField, descType.descriptor)
+        }
+    }
+
+    override fun generateSerialDesc() {
+        var flags = ACC_PRIVATE or ACC_FINAL or ACC_SYNTHETIC
+        if (staticDescriptor) flags = flags or ACC_STATIC
+        codegen.v.newField(
+            OtherOrigin(codegen.myClass.psiOrParent), flags,
+            serialDescField, descType.descriptor, null, null
+        )
+        // todo: lazy initialization of $$serialDesc ?
+        if (!staticDescriptor) return
+        val expr = codegen.createOrGetClInitCodegen()
+        expr.generateSerialDescriptor(0, true)
     }
 
     private fun ExpressionCodegen.generateSyntheticAnnotationOnStack(
@@ -139,27 +167,55 @@ class SerializerCodegenImpl(
         }
     }
 
-    private fun InstructionAdapter.serialCLassDescToLocalVar(classDescVar: Int) {
-        getstatic(serializerAsmType.internalName, serialDescField, descType.descriptor)
-        store(classDescVar, descType)
+    // use null to put value on stack, use number to store it to var
+    private fun InstructionAdapter.stackSerialClassDesc(classDescVar: Int?) {
+        if (staticDescriptor)
+            getstatic(serializerAsmType.internalName, serialDescField, descType.descriptor)
+        else {
+            load(0, serializerAsmType)
+            getfield(serializerAsmType.internalName, serialDescField, descType.descriptor)
+        }
+        classDescVar?.let { store(it, descType) }
     }
 
     override fun generateSerializableClassProperty(property: PropertyDescriptor) {
         codegen.generateMethod(property.getter!!) { _, _ ->
-            getstatic(serializerAsmType.internalName, serialDescField, descType.descriptor)
+            stackSerialClassDesc(null)
             areturn(descType)
         }
     }
 
+    override fun generateChildSerializersGetter(function: FunctionDescriptor) {
+        codegen.generateMethod(function) { _, _ ->
+            val size = serializableProperties.size
+            iconst(size)
+            newarray(kSerializerType)
+            for (i in 0 until size) {
+                dup() // array
+                iconst(i) // index
+                val prop = serializableProperties[i]
+                assert(
+                    stackValueSerializerInstanceFromSerializerWithoutSti(
+                        codegen,
+                        prop,
+                        this@SerializerCodegenImpl
+                    )
+                ) { "Property ${prop.name} must have serializer" }
+                astore(kSerializerType)
+            }
+            areturn(kSerializerArrayType)
+        }
+    }
+
     override fun generateSave(
-            function: FunctionDescriptor
+        function: FunctionDescriptor
     ) {
         codegen.generateMethod(function) { signature, expressionCodegen ->
             // fun save(output: KOutput, obj : T)
             val outputVar = 1
             val objVar = 2
             val descVar = 3
-            serialCLassDescToLocalVar(descVar)
+            stackSerialClassDesc(descVar)
             val objType = signature.valueParameters[1].asmType
             // output = output.writeBegin(classDesc, new KSerializer[0])
             load(outputVar, encoderType)
@@ -167,28 +223,29 @@ class SerializerCodegenImpl(
             genArrayOfTypeParametersSerializers()
             invokeinterface(
                 encoderType.internalName, CallingConventions.begin,
-                          "(" + descType.descriptor + kSerializerArrayType.descriptor +
-                          ")" + kOutputType.descriptor)
+                "(" + descType.descriptor + kSerializerArrayType.descriptor +
+                        ")" + kOutputType.descriptor
+            )
             store(outputVar, kOutputType)
             if (serializableDescriptor.isInternalSerializable) {
-                val sig = StringBuilder("(${kOutputType.descriptor}${descType.descriptor}")
+                val sig = StringBuilder("(${objType.descriptor}${kOutputType.descriptor}${descType.descriptor}")
                 // call obj.write$Self(output, classDesc)
                 load(objVar, objType)
                 load(outputVar, kOutputType)
                 load(descVar, descType)
-                serializableDescriptor.declaredTypeParameters.forEachIndexed {i, _ ->
+                serializableDescriptor.declaredTypeParameters.forEachIndexed { i, _ ->
                     load(0, kSerializerType)
                     getfield(codegen.typeMapper.mapClass(codegen.descriptor).internalName, "$typeArgPrefix$i", kSerializerType.descriptor)
                     sig.append(kSerializerType.descriptor)
                 }
                 sig.append(")V")
-                invokevirtual(
+                invokestatic(
                     objType.internalName, SerialEntityNames.WRITE_SELF_NAME.asString(),
-                              sig.toString(), false)
-            }
-            else {
+                    sig.toString(), false
+                )
+            } else {
                 // loop for all properties
-                val labeledProperties = orderedProperties.filter { !it.transient }
+                val labeledProperties = serializableProperties.filter { !it.transient }
                 for (index in labeledProperties.indices) {
                     val property = labeledProperties[index]
                     if (property.transient) continue
@@ -196,7 +253,7 @@ class SerializerCodegenImpl(
                     load(outputVar, kOutputType)
                     load(descVar, descType)
                     iconst(index)
-                    genKOutputMethodCall(property, codegen, expressionCodegen, objType, objVar)
+                    genKOutputMethodCall(property, codegen, expressionCodegen, objType, objVar, generator = this@SerializerCodegenImpl)
                 }
             }
             // output.writeEnd(classDesc)
@@ -204,7 +261,8 @@ class SerializerCodegenImpl(
             load(descVar, descType)
             invokeinterface(
                 kOutputType.internalName, CallingConventions.end,
-                          "(" + descType.descriptor + ")V")
+                "(" + descType.descriptor + ")V"
+            )
             // return
             areturn(Type.VOID_TYPE)
         }
@@ -224,7 +282,7 @@ class SerializerCodegenImpl(
     }
 
     override fun generateLoad(
-            function: FunctionDescriptor
+        function: FunctionDescriptor
     ) {
         codegen.generateMethod(function) { _, expressionCodegen ->
             // fun load(input: KInput): T
@@ -233,10 +291,10 @@ class SerializerCodegenImpl(
             val indexVar = 3
             val readAllVar = 4
             val bitMaskBase = 5
-            val blocksCnt = orderedProperties.size / OPT_MASK_BITS + 1
-            fun bitMaskOff(i: Int) = bitMaskBase + (i / OPT_MASK_BITS) * OPT_MASK_TYPE.size
-            val propsStartVar = bitMaskBase + OPT_MASK_TYPE.size * blocksCnt
-            serialCLassDescToLocalVar(descVar)
+            val blocksCnt = serializableProperties.bitMaskSlotCount()
+            val bitMaskOff = fun(it: Int): Int { return bitMaskBase + bitMaskSlotAt(it) }
+            val propsStartVar = bitMaskBase + blocksCnt
+            stackSerialClassDesc(descVar)
             // boolean readAll = false
             iconst(0)
             store(readAllVar, Type.BOOLEAN_TYPE)
@@ -248,7 +306,7 @@ class SerializerCodegenImpl(
             }
             // initialize all prop vars
             var propVar = propsStartVar
-            for (property in orderedProperties) {
+            for (property in serializableProperties) {
                 val propertyType = codegen.typeMapper.mapType(property.type)
                 stackValueDefault(propertyType)
                 store(propVar, propertyType)
@@ -260,8 +318,9 @@ class SerializerCodegenImpl(
             genArrayOfTypeParametersSerializers()
             invokeinterface(
                 decoderType.internalName, CallingConventions.begin,
-                          "(" + descType.descriptor + kSerializerArrayType.descriptor +
-                          ")" + kInputType.descriptor)
+                "(" + descType.descriptor + kSerializerArrayType.descriptor +
+                        ")" + kInputType.descriptor
+            )
             store(inputVar, kInputType)
             // readElement: int index = input.readElement(classDesc)
             val readElementLabel = Label()
@@ -270,10 +329,11 @@ class SerializerCodegenImpl(
             load(descVar, descType)
             invokeinterface(
                 kInputType.internalName, CallingConventions.decodeElementIndex,
-                          "(" + descType.descriptor + ")I")
+                "(" + descType.descriptor + ")I"
+            )
             store(indexVar, Type.INT_TYPE)
             // switch(index)
-            val labeledProperties = orderedProperties.filter { !it.transient }
+            val labeledProperties = serializableProperties.filter { !it.transient }
             val readAllLabel = Label()
             val readEndLabel = Label()
             val incorrectIndLabel = Label()
@@ -292,7 +352,7 @@ class SerializerCodegenImpl(
             // loop for all properties
             propVar = propsStartVar
             var labelNum = 0
-            for ((index, property) in orderedProperties.withIndex()) {
+            for ((index, property) in serializableProperties.withIndex()) {
                 val propertyType = codegen.typeMapper.mapType(property.type)
                 if (!property.transient) {
                     // labelI:
@@ -303,7 +363,7 @@ class SerializerCodegenImpl(
                     iconst(labelNum)
 
                     val sti = getSerialTypeInfo(property, propertyType)
-                    val useSerializer = stackValueSerializerInstanceFromSerializer(codegen, sti)
+                    val useSerializer = stackValueSerializerInstanceFromSerializer(codegen, sti, this@SerializerCodegenImpl)
                     val unknownSer = (!useSerializer && sti.elementMethodPrefix.isEmpty())
                     if (unknownSer) {
                         aconst(codegen.typeMapper.mapType(property.type))
@@ -326,9 +386,10 @@ class SerializerCodegenImpl(
                         // we can choose either it is read or update
                         val readLabel = Label()
                         val endL = Label()
-                        genValidateProperty(index, ::bitMaskOff)
+                        genValidateProperty(index, bitMaskOff)
                         ificmpeq(readLabel)
                         load(propVar, propertyType)
+                        StackValue.coerce(propertyType, sti.type, this)
                         produceCall(true)
                         goTo(endL)
                         visitLabel(readLabel)
@@ -341,8 +402,7 @@ class SerializerCodegenImpl(
 
                     if (sti.unit) {
                         StackValue.putUnitInstance(this)
-                    }
-                    else {
+                    } else {
                         StackValue.coerce(sti.type, propertyType, this)
                     }
                     store(propVar, propertyType)
@@ -368,8 +428,10 @@ class SerializerCodegenImpl(
             visitLabel(readEndLabel)
             load(inputVar, kInputType)
             load(descVar, descType)
-            invokeinterface(kInputType.internalName, CallingConventions.end,
-                          "(" + descType.descriptor + ")V")
+            invokeinterface(
+                kInputType.internalName, CallingConventions.end,
+                "(" + descType.descriptor + ")V"
+            )
             if (!serializableDescriptor.isInternalSerializable) {
                 //validate all required (constructor) fields
                 val nonThrowLabel = Label()
@@ -378,10 +440,13 @@ class SerializerCodegenImpl(
                     if (property.optional || property.transient) {
                         // todo: Normal reporting of error
                         if (!property.isConstructorParameterWithDefault)
-                            throw CompilationException("Property ${property.name} was declared as optional/transient but has no default value", null, null)
-                    }
-                    else {
-                        genValidateProperty(i, ::bitMaskOff)
+                            throw CompilationException(
+                                "Property ${property.name} was declared as optional/transient but has no default value",
+                                null,
+                                null
+                            )
+                    } else {
+                        genValidateProperty(i, bitMaskOff)
                         // todo: print name of each variable?
                         ificmpeq(throwLabel)
                     }
@@ -403,8 +468,9 @@ class SerializerCodegenImpl(
                 // result := ... <created object>
                 store(resultVar, serializableAsmType)
                 // set other properties
-                propVar = propsStartVar + properties.serializableConstructorProperties.map { codegen.typeMapper.mapType(it.type).size }.sum()
-                genSetSerializableStandaloneProperties(expressionCodegen, propVar, resultVar, ::bitMaskOff)
+                propVar = propsStartVar +
+                        properties.serializableConstructorProperties.map { codegen.typeMapper.mapType(it.type).size }.sum()
+                genSetSerializableStandaloneProperties(expressionCodegen, propVar, resultVar, bitMaskOff)
                 // load result
                 load(resultVar, serializableAsmType)
                 // will return result
@@ -434,8 +500,7 @@ class SerializerCodegenImpl(
         }
         if (!properties.primaryConstructorWithDefaults) {
             constructorDesc.append(")V")
-        }
-        else {
+        } else {
             val cnt = properties.serializableConstructorProperties.size.coerceAtMost(32) //only 32 default values are supported
             val mask = if (cnt == 32) -1 else ((1 shl cnt) - 1)
             load(bitMaskBase, OPT_MASK_TYPE)
@@ -448,7 +513,8 @@ class SerializerCodegenImpl(
     }
 
     private fun InstructionAdapter.genSetSerializableStandaloneProperties(
-            expressionCodegen: ExpressionCodegen, propVarStart: Int, resultVar: Int, bitMaskPos: (Int) -> Int) {
+        expressionCodegen: ExpressionCodegen, propVarStart: Int, resultVar: Int, bitMaskPos: (Int) -> Int
+    ) {
         var propVar = propVarStart
         val offset = properties.serializableConstructorProperties.size
         for ((index, property) in properties.serializableStandaloneProperties.withIndex()) {
@@ -461,8 +527,7 @@ class SerializerCodegenImpl(
                 // if (seen)
                 //    set
                 ificmpeq(nextLabel)
-            }
-            else {
+            } else {
                 // if (!seen)
                 //    throw
                 // set
@@ -473,25 +538,13 @@ class SerializerCodegenImpl(
 
             // generate setter call
             val propertyType = codegen.typeMapper.mapType(property.type)
-            expressionCodegen.intermediateValueForProperty(property.descriptor, false, null,
-                                                           StackValue.local(resultVar, serializableAsmType)).
-                    store(StackValue.local(propVar, propertyType), this)
+            expressionCodegen.intermediateValueForProperty(
+                property.descriptor, false, null,
+                StackValue.local(resultVar, serializableAsmType)
+            ).store(StackValue.local(propVar, propertyType), this)
             propVar += propertyType.size
             if (property.optional)
                 visitLabel(nextLabel)
         }
     }
-
-    // todo: move to StackValue?
-    private fun InstructionAdapter.stackValueDefault(type: Type) {
-        when (type.sort) {
-            BOOLEAN, BYTE, SHORT, CHAR, INT -> iconst(0)
-            LONG -> lconst(0)
-            FLOAT -> fconst(0f)
-            DOUBLE -> dconst(0.0)
-            else -> aconst(null)
-        }
-    }
-
-
 }

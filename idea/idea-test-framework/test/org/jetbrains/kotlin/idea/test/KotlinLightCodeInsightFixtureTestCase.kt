@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.test
@@ -32,6 +32,8 @@ import com.intellij.testFramework.LoggedErrorProcessor
 import org.apache.log4j.Logger
 import org.jetbrains.kotlin.cli.common.arguments.K2JVMCompilerArguments
 import org.jetbrains.kotlin.config.CompilerSettings
+import org.jetbrains.kotlin.config.CompilerSettings.Companion.DEFAULT_ADDITIONAL_ARGUMENTS
+import org.jetbrains.kotlin.config.JvmTarget
 import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.idea.KotlinFileType
@@ -40,6 +42,7 @@ import org.jetbrains.kotlin.idea.compiler.configuration.KotlinCompilerSettings
 import org.jetbrains.kotlin.idea.facet.KotlinFacet
 import org.jetbrains.kotlin.idea.facet.configureFacet
 import org.jetbrains.kotlin.idea.facet.getOrCreateFacet
+import org.jetbrains.kotlin.idea.inspections.UnusedSymbolInspection
 import org.jetbrains.kotlin.idea.test.CompilerTestDirectives.COMPILER_ARGUMENTS_DIRECTIVE
 import org.jetbrains.kotlin.idea.test.CompilerTestDirectives.JVM_TARGET_DIRECTIVE
 import org.jetbrains.kotlin.idea.test.CompilerTestDirectives.LANGUAGE_VERSION_DIRECTIVE
@@ -63,6 +66,12 @@ abstract class KotlinLightCodeInsightFixtureTestCase : KotlinLightCodeInsightFix
 
     override fun setUp() {
         super.setUp()
+        // We do it here to avoid possible initialization problems
+        // UnusedSymbolInspection() calls IDEA UnusedDeclarationInspection() in static initializer,
+        // which in turn registers some extensions provoking "modifications aren't allowed during highlighting"
+        // when done lazily
+        UnusedSymbolInspection()
+
         (StartupManager.getInstance(project) as StartupManagerImpl).runPostStartupActivities()
         VfsRootAccess.allowRootAccess(KotlinTestUtils.getHomeDirectory())
 
@@ -78,8 +87,6 @@ abstract class KotlinLightCodeInsightFixtureTestCase : KotlinLightCodeInsightFix
                 }
             })
         }
-
-        fixTemplates()
     }
 
     override fun tearDown() {
@@ -103,6 +110,27 @@ abstract class KotlinLightCodeInsightFixtureTestCase : KotlinLightCodeInsightFix
 
         return when (platformId) {
             JDK_AND_MULTIPLATFORM_STDLIB_WITH_SOURCES -> KotlinJdkAndMultiplatformStdlibDescriptor.JDK_AND_MULTIPLATFORM_STDLIB_WITH_SOURCES
+
+            KOTLIN_JVM_WITH_STDLIB_SOURCES -> ProjectDescriptorWithStdlibSources.INSTANCE
+
+            KOTLIN_JAVASCRIPT -> KotlinStdJSProjectDescriptor
+
+            KOTLIN_JVM_WITH_STDLIB_SOURCES_WITH_ADDITIONAL_JS -> {
+                KotlinMultiModuleProjectDescriptor(
+                    KOTLIN_JVM_WITH_STDLIB_SOURCES_WITH_ADDITIONAL_JS,
+                    mainModuleDescriptor = ProjectDescriptorWithStdlibSources.INSTANCE,
+                    additionalModuleDescriptor = KotlinStdJSProjectDescriptor
+                )
+            }
+
+            KOTLIN_JAVASCRIPT_WITH_ADDITIONAL_JVM_WITH_STDLIB -> {
+                KotlinMultiModuleProjectDescriptor(
+                    KOTLIN_JAVASCRIPT_WITH_ADDITIONAL_JVM_WITH_STDLIB,
+                    mainModuleDescriptor = KotlinStdJSProjectDescriptor,
+                    additionalModuleDescriptor = ProjectDescriptorWithStdlibSources.INSTANCE
+                )
+            }
+
             else -> throw IllegalStateException("Unknown value for project descriptor kind")
         }
     }
@@ -200,7 +228,7 @@ object CompilerTestDirectives {
     val ALL_COMPILER_TEST_DIRECTIVES = listOf(LANGUAGE_VERSION_DIRECTIVE, JVM_TARGET_DIRECTIVE, COMPILER_ARGUMENTS_DIRECTIVE)
 }
 
-fun configureCompilerOptions(fileText: String, project: Project, module: Module) {
+fun configureCompilerOptions(fileText: String, project: Project, module: Module): Boolean {
     val version = InTextDirectivesUtils.findStringWithPrefixes(fileText, "// $LANGUAGE_VERSION_DIRECTIVE ")
     val jvmTarget = InTextDirectivesUtils.findStringWithPrefixes(fileText, "// $JVM_TARGET_DIRECTIVE ")
     val options = InTextDirectivesUtils.findStringWithPrefixes(fileText, "// $COMPILER_ARGUMENTS_DIRECTIVE ")
@@ -211,7 +239,9 @@ fun configureCompilerOptions(fileText: String, project: Project, module: Module)
         val facetSettings = KotlinFacet.get(module)!!.configuration.settings
 
         if (jvmTarget != null) {
-            (facetSettings.compilerArguments as K2JVMCompilerArguments).jvmTarget = jvmTarget
+            val compilerArguments = facetSettings.compilerArguments
+            require(compilerArguments is K2JVMCompilerArguments) { "Attempt to specify `$JVM_TARGET_DIRECTIVE` for non-JVM test" }
+            compilerArguments.jvmTarget = jvmTarget
         }
 
         if (options != null) {
@@ -223,7 +253,24 @@ fun configureCompilerOptions(fileText: String, project: Project, module: Module)
 
             KotlinCompilerSettings.getInstance(project).update { this.additionalArguments = options }
         }
+        return true
     }
+
+    return false
+}
+
+fun rollbackCompilerOptions(project: Project, module: Module) {
+    configureLanguageAndApiVersion(project, module, LanguageVersion.LATEST_STABLE.versionString)
+
+    val facetSettings = KotlinFacet.get(module)!!.configuration.settings
+    (facetSettings.compilerArguments as? K2JVMCompilerArguments)?.jvmTarget = JvmTarget.DEFAULT.description
+
+    val compilerSettings = facetSettings.compilerSettings ?: CompilerSettings().also {
+        facetSettings.compilerSettings = it
+    }
+    compilerSettings.additionalArguments = DEFAULT_ADDITIONAL_ARGUMENTS
+    facetSettings.updateMergedArguments()
+    KotlinCompilerSettings.getInstance(project).update { this.additionalArguments = DEFAULT_ADDITIONAL_ARGUMENTS }
 }
 
 fun configureLanguageAndApiVersion(

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.types.expressions
@@ -18,7 +18,6 @@ import org.jetbrains.kotlin.descriptors.impl.LocalVariableDescriptor
 import org.jetbrains.kotlin.diagnostics.Errors
 import org.jetbrains.kotlin.diagnostics.Errors.*
 import org.jetbrains.kotlin.lexer.KtTokens
-import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.codeFragmentUtil.suppressDiagnosticsInDebugMode
@@ -28,7 +27,6 @@ import org.jetbrains.kotlin.resolve.*
 import org.jetbrains.kotlin.resolve.calls.CallResolver
 import org.jetbrains.kotlin.resolve.calls.callResolverUtil.ResolveArgumentsMode
 import org.jetbrains.kotlin.resolve.calls.callUtil.getCalleeExpressionIfAny
-import org.jetbrains.kotlin.resolve.calls.callUtil.getParentCall
 import org.jetbrains.kotlin.resolve.calls.callUtil.getResolvedCall
 import org.jetbrains.kotlin.resolve.calls.checkers.isBuiltInCoroutineContext
 import org.jetbrains.kotlin.resolve.calls.context.*
@@ -52,7 +50,6 @@ import org.jetbrains.kotlin.types.typeUtil.builtIns
 import org.jetbrains.kotlin.types.typeUtil.isSubtypeOf
 import org.jetbrains.kotlin.types.typeUtil.makeNotNullable
 import org.jetbrains.kotlin.types.typeUtil.makeNullable
-import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 import org.jetbrains.kotlin.utils.yieldIfNotNull
 import java.util.*
 import javax.inject.Inject
@@ -148,14 +145,14 @@ class DoubleColonExpressionResolver(
         }
 
         if (type is SimpleType && !type.isMarkedNullable && descriptor is TypeParameterDescriptor
-            && !descriptor.isReified && !expression.mayBeReified(c.trace.bindingContext)
+            && !descriptor.isReified && !expression.isInsideTypeIndexAnnotation(c.trace.bindingContext)
         ) {
             c.trace.report(TYPE_PARAMETER_AS_REIFIED.on(expression, descriptor))
         }
         // Note that "T::class" is allowed for type parameter T without a non-null upper bound
         else if ((TypeUtils.isNullableType(type) && descriptor !is TypeParameterDescriptor) || expression.hasQuestionMarks) {
             c.trace.report(NULLABLE_TYPE_IN_CLASS_LITERAL_LHS.on(expression))
-        } else if (!result.possiblyBareType.isBare && !isAllowedInClassLiteral(type) && !expression.mayBeReified(c.trace.bindingContext)) {
+        } else if (!result.possiblyBareType.isBare && !isAllowedInClassLiteral(type) && !expression.isInsideTypeIndexAnnotation(c.trace.bindingContext)) {
             c.trace.report(CLASS_LITERAL_LHS_NOT_A_CLASS.on(expression))
         }
         for (additionalChecker in additionalCheckers) {
@@ -163,13 +160,7 @@ class DoubleColonExpressionResolver(
         }
     }
 
-    private fun KtExpression.mayBeReified(context: BindingContext): Boolean {
-        val parentAnnotationIfAny = this.getParentCall(context)?.callElement?.safeAs<KtAnnotationEntry>()
-            ?: return false
-        return context.get(BindingContext.ANNOTATION, parentAnnotationIfAny)?.fqName?.equals(
-            FqName("kotlin.experimental.TypeIndex")
-        ) ?: false
-    }
+
 
     // Returns true if the expression is not a call expression without value arguments (such as "A<B>") or a qualified expression
     // which contains such call expression as one of its parts.
@@ -544,11 +535,12 @@ class DoubleColonExpressionResolver(
 
         checkReferenceIsToAllowedMember(descriptor, context.trace, expression)
 
-        val type = createKCallableTypeForReference(descriptor, lhs, reflectionTypes, context.scope.ownerDescriptor) ?: return null
+        val scope = context.scope.ownerDescriptor
+        val type = createKCallableTypeForReference(descriptor, lhs, reflectionTypes, scope) ?: return null
 
         when (descriptor) {
             is FunctionDescriptor -> bindFunctionReference(expression, type, context, descriptor)
-            is PropertyDescriptor -> bindPropertyReference(expression, type, context)
+            is PropertyDescriptor -> bindPropertyReference(expression, type, context, isMutablePropertyReference(descriptor, lhs, scope))
         }
 
         return type
@@ -621,11 +613,12 @@ class DoubleColonExpressionResolver(
     internal fun bindPropertyReference(
         expression: KtCallableReferenceExpression,
         referenceType: KotlinType,
-        context: ResolutionContext<*>
+        context: ResolutionContext<*>,
+        mutable: Boolean = true
     ) {
         val localVariable = LocalVariableDescriptor(
             context.scope.ownerDescriptor, Annotations.EMPTY, Name.special("<anonymous>"), referenceType,
-            expression.toSourceElement()
+            mutable, false, expression.toSourceElement()
         )
 
         context.trace.record(BindingContext.VARIABLE, expression, localVariable)
@@ -790,17 +783,26 @@ class DoubleColonExpressionResolver(
     }
 
     companion object {
+        private fun receiverTypeFor(descriptor: CallableDescriptor, lhs: DoubleColonLHS?): KotlinType? =
+            (descriptor.extensionReceiverParameter ?: descriptor.dispatchReceiverParameter)?.let { (lhs as? DoubleColonLHS.Type)?.type }
+
+        private fun isMutablePropertyReference(
+            descriptor: PropertyDescriptor,
+            lhs: DoubleColonLHS?,
+            scopeOwnerDescriptor: DeclarationDescriptor
+        ): Boolean {
+            val receiver = receiverTypeFor(descriptor, lhs)?.let(::TransientReceiver)
+            val setter = descriptor.setter
+            return descriptor.isVar && (setter == null || Visibilities.isVisible(receiver, setter, scopeOwnerDescriptor))
+        }
+
         fun createKCallableTypeForReference(
             descriptor: CallableDescriptor,
             lhs: DoubleColonLHS?,
             reflectionTypes: ReflectionTypes,
             scopeOwnerDescriptor: DeclarationDescriptor
         ): KotlinType? {
-            val receiverType =
-                if (descriptor.extensionReceiverParameter != null || descriptor.dispatchReceiverParameter != null)
-                    (lhs as? DoubleColonLHS.Type)?.type
-                else null
-
+            val receiverType = receiverTypeFor(descriptor, lhs)
             return when (descriptor) {
                 is FunctionDescriptor -> {
                     val returnType = descriptor.returnType ?: return null
@@ -812,10 +814,7 @@ class DoubleColonExpressionResolver(
                     )
                 }
                 is PropertyDescriptor -> {
-                    val mutable = descriptor.isVar && run {
-                        val setter = descriptor.setter
-                        setter == null || Visibilities.isVisible(receiverType?.let(::TransientReceiver), setter, scopeOwnerDescriptor)
-                    }
+                    val mutable = isMutablePropertyReference(descriptor, lhs, scopeOwnerDescriptor)
                     reflectionTypes.getKPropertyType(Annotations.EMPTY, listOfNotNull(receiverType), descriptor.type, mutable)
                 }
                 is VariableDescriptor -> null

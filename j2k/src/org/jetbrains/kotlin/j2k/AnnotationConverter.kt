@@ -20,6 +20,7 @@ import com.intellij.codeInsight.NullableNotNullManager
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.*
 import org.jetbrains.kotlin.descriptors.annotations.KotlinTarget
+import org.jetbrains.kotlin.idea.j2k.content
 import org.jetbrains.kotlin.j2k.ast.*
 import org.jetbrains.kotlin.j2k.ast.Annotation
 import org.jetbrains.kotlin.load.java.components.JavaAnnotationTargetMapper
@@ -188,9 +189,9 @@ class AnnotationConverter(private val converter: Converter) {
         val returnType = method.returnType
         if (returnType is PsiArrayType && value !is PsiArrayInitializerMemberValue) {
             return converter.deferredElement { codeConverter ->
-                val convertedType = converter.typeConverter.convertType(returnType) as ArrayType
+                converter.typeConverter.convertType(returnType) as ArrayType
                 val convertAttributeValue = convertAttributeValue(value, returnType.componentType, false, false)
-                createArrayExpression(codeConverter, convertAttributeValue.toList(), convertedType, false)
+                createArrayLiteralExpression(codeConverter, convertAttributeValue.toList())
             }
         }
         return converter.deferredElement(convertAttributeValue(value, returnType, false, false).single())
@@ -215,10 +216,21 @@ class AnnotationConverter(private val converter: Converter) {
             }
 
             is PsiAnnotation -> {
-                listOf({ _ ->
-                           val (name, arguments) = convertAnnotationValue(value)!!
-                           AnnotationConstructorCall(name, arguments).assignPrototype(value)
-                       })
+                val annotationConstructor = listOf<(CodeConverter) -> Expression>(
+                    { _ ->
+                        val (name, arguments) = convertAnnotationValue(value)!!
+                        AnnotationConstructorCall(name, arguments).assignPrototype(value)
+                    })
+                if (expectedType is PsiArrayType) {
+                    listOf(
+                        { codeConverter ->
+                            convertArrayInitializerValue(codeConverter, value.text, annotationConstructor, expectedType, isVararg)
+                                .assignPrototype(value)
+                        })
+
+                } else {
+                    annotationConstructor
+                }
             }
             else -> listOf({ _ -> DummyStringExpression(value?.text ?: "").assignPrototype(value) })
         }
@@ -253,20 +265,18 @@ class AnnotationConverter(private val converter: Converter) {
     ): Expression {
         val expectedTypeConverted = converter.typeConverter.convertType(expectedType)
         return if (expectedTypeConverted is ArrayType) {
-            createArrayExpression(codeConverter, componentGenerators, expectedTypeConverted, isVararg)
+            createArrayLiteralExpression(codeConverter, componentGenerators)
         }
         else {
             DummyStringExpression(valueText)
         }
     }
 
-    private fun createArrayExpression(codeConverter: CodeConverter, componentGenerators: List<(CodeConverter) -> Expression>, expectedType: ArrayType, isVararg: Boolean): Expression {
-        val array = createArrayInitializerExpression(expectedType, componentGenerators.map { it(codeConverter) }, needExplicitType = false)
-        return if (isVararg) {
-            StarExpression(array.assignNoPrototype())
-        }
-        else {
-            array
-        }
+    private fun createArrayLiteralExpression(
+        codeConverter: CodeConverter,
+        componentGenerators: List<(CodeConverter) -> Expression>
+    ): Expression {
+        val initializers = componentGenerators.map { it(codeConverter) }
+        return ArrayLiteralExpression(initializers)
     }
 }

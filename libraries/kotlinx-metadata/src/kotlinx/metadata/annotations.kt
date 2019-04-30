@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlinx.metadata
@@ -36,6 +36,11 @@ sealed class KmAnnotationArgument<out T : Any> {
     data class FloatValue(override val value: Float) : KmAnnotationArgument<Float>()
     data class DoubleValue(override val value: Double) : KmAnnotationArgument<Double>()
     data class BooleanValue(override val value: Boolean) : KmAnnotationArgument<Boolean>()
+
+    data class UByteValue(override val value: Byte) : KmAnnotationArgument<Byte>()
+    data class UShortValue(override val value: Short) : KmAnnotationArgument<Short>()
+    data class UIntValue(override val value: Int) : KmAnnotationArgument<Int>()
+    data class ULongValue(override val value: Long) : KmAnnotationArgument<Long>()
 
     data class StringValue(override val value: String) : KmAnnotationArgument<String>()
     data class KClassValue(override val value: ClassName) : KmAnnotationArgument<ClassName>()

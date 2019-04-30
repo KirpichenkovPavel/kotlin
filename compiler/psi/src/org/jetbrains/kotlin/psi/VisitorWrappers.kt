@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.psi
@@ -335,6 +335,13 @@ fun referenceExpressionRecursiveVisitor(block: (KtReferenceExpression) -> Unit) 
         }
     }
 
+fun valueArgumentListVisitor(block: (KtValueArgumentList) -> Unit) =
+    object : KtVisitorVoid() {
+        override fun visitValueArgumentList(list: KtValueArgumentList) {
+            block(list)
+        }
+    }
+
 fun valueArgumentVisitor(block: (KtValueArgument) -> Unit) =
     object : KtVisitorVoid() {
         override fun visitArgument(valueArgument: KtValueArgument) {
@@ -415,5 +422,21 @@ fun returnExpressionVisitor(block: (KtReturnExpression) -> Unit) =
         override fun visitReturnExpression(returnExpression: KtReturnExpression) {
             super.visitReturnExpression(returnExpression)
             block(returnExpression)
+        }
+    }
+
+fun delegatedSuperTypeEntry(block: (KtDelegatedSuperTypeEntry) -> Unit) =
+    object : KtVisitorVoid() {
+        override fun visitDelegatedSuperTypeEntry(delegatedSuperTypeEntry: KtDelegatedSuperTypeEntry) {
+            super.visitDelegatedSuperTypeEntry(delegatedSuperTypeEntry)
+            block(delegatedSuperTypeEntry)
+        }
+    }
+
+fun postfixExpressionVisitor(block: (KtPostfixExpression) -> Unit) =
+    object : KtVisitorVoid() {
+        override fun visitPostfixExpression(expression: KtPostfixExpression) {
+            super.visitPostfixExpression(expression)
+            block(expression)
         }
     }

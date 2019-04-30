@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.platform
@@ -71,8 +71,15 @@ abstract class IdePlatformKindTooling {
             return TOOLING_SUPPORT_BY_KIND[kind] ?: error("Unknown platform $kind")
         }
 
+        /**
+         * @return null if current IDE doesn't know given platform
+         */
+        fun getToolingIfAny(platformId: KotlinPlatform): IdePlatformKindTooling? {
+            return TOOLING_SUPPORT_BY_PLATFORM_ID[platformId]
+        }
+
         fun getTooling(platformId: KotlinPlatform): IdePlatformKindTooling {
-            return TOOLING_SUPPORT_BY_PLATFORM_ID[platformId] ?: error("Unknown Gradle platform $platformId")
+            return getToolingIfAny(platformId) ?: error("Unknown Gradle platform $platformId")
         }
     }
 }

@@ -188,7 +188,7 @@ class MigrateExternalExtensionFix(declaration: KtNamedDeclaration)
                 }
 
                 val setterStubProperty = ktPsiFactory.createProperty("val x: Unit set(value) { Unit }")
-                val block = setterStubProperty.setter!!.bodyExpression as KtBlockExpression
+                val block = setterStubProperty.setter!!.bodyBlockExpression!!
                 block.statements.single().replace(setterBody)
                 declaration.add(setterStubProperty.setter!!)
             }
@@ -272,7 +272,7 @@ class MigrateExternalExtensionFix(declaration: KtNamedDeclaration)
                         }
                     }
                     if ((e as? KtNamedDeclaration)?.modifierList?.annotationEntries?.any { it.isJsNativeAnnotation() } == true) {
-                        return MigrateExternalExtensionFix(e as KtNamedDeclaration)
+                        return MigrateExternalExtensionFix(e)
                     }
                 }
             }

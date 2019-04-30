@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.codeInsight.gradle
@@ -9,17 +9,16 @@ import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.application.runWriteAction
 import com.intellij.psi.PsiDocumentManager
 import com.intellij.psi.PsiManager
+import com.intellij.testFramework.runInEdtAndWait
 import com.intellij.util.concurrency.FutureResult
 import org.jetbrains.kotlin.config.ApiVersion
 import org.jetbrains.kotlin.config.LanguageVersion
 import org.jetbrains.kotlin.idea.configuration.KotlinMigrationProjectComponent
 import org.jetbrains.kotlin.idea.configuration.KotlinMigrationProjectComponent.MigrationTestState
 import org.jetbrains.kotlin.idea.configuration.MigrationInfo
-import org.jetbrains.kotlin.test.testFramework.runInEdtAndWait
 import org.jetbrains.plugins.gradle.tooling.annotation.TargetVersions
 import org.junit.Assert
 import org.junit.Test
-import java.lang.IllegalStateException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
@@ -69,7 +68,14 @@ class GradleMigrateTest : GradleImportingTestCase() {
         Assert.assertEquals(false, migrateComponentState?.hasApplicableTools)
 
         Assert.assertEquals(
-            MigrationInfo.create("1.1.0", ApiVersion.KOTLIN_1_1, LanguageVersion.KOTLIN_1_1, newStdlibVersion = "1.2.0"),
+            MigrationInfo.create(
+                oldStdlibVersion = "1.1.0",
+                oldApiVersion = ApiVersion.KOTLIN_1_1,
+                oldLanguageVersion = LanguageVersion.KOTLIN_1_1,
+                newStdlibVersion = "1.2.0",
+                newApiVersion = ApiVersion.KOTLIN_1_2,
+                newLanguageVersion = LanguageVersion.KOTLIN_1_2
+            ),
             migrateComponentState?.migrationInfo
         )
     }
@@ -92,7 +98,8 @@ class GradleMigrateTest : GradleImportingTestCase() {
         }
 
         val importResult = FutureResult<MigrationTestState?>()
-        val migrationProjectComponent = KotlinMigrationProjectComponent.getInstance(myProject)
+        val migrationProjectComponent = KotlinMigrationProjectComponent.getInstanceIfNotDisposed(myProject)
+            ?: error("Disposed project")
 
         migrationProjectComponent.setImportFinishListener { migrationState ->
             importResult.set(migrationState)

@@ -23,24 +23,18 @@ sourceSets {
     "test" { projectDefault() }
 }
 
-val jar = runtimeJar {
-    from(fileTree("$projectDir/src")) { include("META-INF/**") }
-}
+publish()
+
+runtimeJar()
 sourcesJar()
 javadocJar()
 testsJar {}
-
-publish()
 
 dist {
     rename("kotlin-", "")
 }
 
-ideaPlugin {
-    from(jar)
-}
-
-projectTest {
+projectTest(parallel = true) {
     dependsOn(":kotlin-stdlib:jvm-minimal-for-test:dist")
     workingDir = rootDir
 }

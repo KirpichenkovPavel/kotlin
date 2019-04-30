@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls.context;
@@ -124,8 +124,8 @@ public abstract class ResolutionContext<Context extends ResolutionContext<Contex
     );
 
     @NotNull
+    @SuppressWarnings("unchecked")
     private Context self() {
-        //noinspection unchecked
         return (Context) this;
     }
 
@@ -220,14 +220,15 @@ public abstract class ResolutionContext<Context extends ResolutionContext<Contex
     }
 
     @Nullable
-    public <T extends PsiElement> T getContextParentOfType(@NotNull KtExpression expression, @NotNull Class<? extends T>... classes) {
+    @SafeVarargs
+    @SuppressWarnings("unchecked")
+    public final <T extends PsiElement> T getContextParentOfType(@NotNull KtExpression expression, @NotNull Class<? extends T>... classes) {
         KtExpression context = expressionContextProvider.invoke(expression);
         PsiElement current = context != null ? context : expression.getParent();
 
         while (current != null) {
             for (Class<? extends T> klass : classes) {
                 if (klass.isInstance(current)) {
-                    //noinspection unchecked
                     return (T) current;
                 }
             }

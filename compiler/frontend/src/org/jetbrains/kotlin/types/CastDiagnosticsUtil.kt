@@ -24,8 +24,10 @@ import org.jetbrains.kotlin.builtins.isExtensionFunctionType
 import org.jetbrains.kotlin.builtins.isFunctionType
 import org.jetbrains.kotlin.descriptors.ClassDescriptor
 import org.jetbrains.kotlin.descriptors.ClassKind
+import org.jetbrains.kotlin.descriptors.TypeParameterDescriptor
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.resolve.DescriptorUtils
+import org.jetbrains.kotlin.resolve.calls.util.hasTypeArgumentsAnnotation
 import org.jetbrains.kotlin.types.checker.KotlinTypeChecker
 import org.jetbrains.kotlin.types.checker.TypeCheckingProcedure
 import org.jetbrains.kotlin.types.expressions.DataFlowAnalyzer
@@ -163,7 +165,7 @@ object CastDiagnosticsUtil {
         val supertypeWithVariables = TypeCheckingProcedure.findCorrespondingSupertype(subtypeWithVariables, supertype)
 
         val variables = subtypeWithVariables.constructor.parameters
-        val variableConstructors = variables.map { descriptor -> descriptor.typeConstructor }.toSet()
+        val variableConstructors = variables.map(TypeParameterDescriptor::getTypeConstructor).toSet()
 
         val substitution: MutableMap<TypeConstructor, TypeProjection> = if (supertypeWithVariables != null) {
             // Now, let's try to unify Collection<T> and Collection<Foo> solution is a map from T to Foo
@@ -207,6 +209,7 @@ object CastDiagnosticsUtil {
         actualType: KotlinType
     ): Boolean {
         // Here: x as? Type <=> x as Type?
+        if (targetType.hasTypeArgumentsAnnotation()) return false
         val refinedTargetType = if (KtPsiUtil.isSafeCast(expression)) TypeUtils.makeNullable(targetType) else targetType
         val possibleTypes = DataFlowAnalyzer.getAllPossibleTypes(expression.left, actualType, context)
         return isRefinementUseless(possibleTypes, refinedTargetType, shouldCheckForExactType(expression, context.expectedType))

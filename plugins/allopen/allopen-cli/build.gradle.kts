@@ -11,8 +11,11 @@ dependencies {
     compileOnly(project(":compiler:frontend"))
     compileOnly(intellijCoreDep()) { includeJars("intellij-core") }
 
-    runtime(project(":kotlin-stdlib"))
+    runtime(kotlinStdlib())
 
+    testRuntimeOnly(intellijDep()) {
+        includeJars("guava", rootProject = rootProject)
+    }
     testRuntimeOnly(projectRuntimeJar(":kotlin-compiler"))
 
     testCompile(project(":compiler:backend"))
@@ -26,18 +29,12 @@ sourceSets {
     "test" { projectDefault() }
 }
 
-val jar = runtimeJar {
-    from(fileTree("$projectDir/src")) { include("META-INF/**") }
-}
+val jar = runtimeJar {}
 
 testsJar {}
 
 dist(targetName = the<BasePluginConvention>().archivesBaseName.removePrefix("kotlin-") + ".jar")
 
-ideaPlugin {
-    from(jar)
-}
-
-projectTest {
+projectTest(parallel = true) {
     workingDir = rootDir
 }

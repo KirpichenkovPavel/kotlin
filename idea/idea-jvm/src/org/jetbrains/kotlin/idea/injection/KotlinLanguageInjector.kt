@@ -23,7 +23,6 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Key
-import com.intellij.openapi.util.registry.Registry
 import com.intellij.openapi.util.text.StringUtilRt
 import com.intellij.patterns.PatternCondition
 import com.intellij.patterns.PatternConditionPlus
@@ -46,6 +45,7 @@ import org.intellij.plugins.intelliLang.inject.java.JavaLanguageInjectionSupport
 import org.intellij.plugins.intelliLang.util.AnnotationUtilEx
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
 import org.jetbrains.kotlin.descriptors.annotations.Annotated
+import org.jetbrains.kotlin.idea.caches.resolve.allowResolveInWriteAction
 import org.jetbrains.kotlin.idea.caches.resolve.analyze
 import org.jetbrains.kotlin.idea.patterns.KotlinFunctionPattern
 import org.jetbrains.kotlin.idea.references.KtReference
@@ -53,7 +53,6 @@ import org.jetbrains.kotlin.idea.references.mainReference
 import org.jetbrains.kotlin.idea.runInReadActionWithWriteActionPriority
 import org.jetbrains.kotlin.idea.search.usagesSearch.descriptor
 import org.jetbrains.kotlin.idea.util.ProjectRootsUtil
-import org.jetbrains.kotlin.idea.util.application.progressIndicatorNullable
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.psi.*
@@ -74,8 +73,6 @@ class KotlinLanguageInjector(
         private val STRING_LITERALS_REGEXP = "\"([^\"]*)\"".toRegex()
         private val ABSENT_KOTLIN_INJECTION = BaseInjection("ABSENT_KOTLIN_BASE_INJECTION")
     }
-
-    var annotationInjectionsEnabled = Registry.`is`("kotlin.annotation.injection.enabled", false)
 
     private val kotlinSupport: KotlinLanguageInjectionSupport? by lazy {
         ArrayList(InjectorUtils.getActiveInjectionSupports()).filterIsInstance(KotlinLanguageInjectionSupport::class.java).firstOrNull()
@@ -113,7 +110,7 @@ class KotlinLanguageInjector(
                     return computedInjection
                 }
 
-                if (ApplicationManager.getApplication().isReadAccessAllowed && ProgressManager.getInstance().progressIndicatorNullable == null) {
+                if (ApplicationManager.getApplication().isReadAccessAllowed && ProgressManager.getInstance().progressIndicator == null) {
                     // The action cannot be canceled by caller and by internal checkCanceled() calls.
                     // Force creating new indicator that is canceled on write action start, otherwise there might be lags in typing.
                     runInReadActionWithWriteActionPriority(::computeAndCache) ?: kotlinCachedInjection?.baseInjection ?: ABSENT_KOTLIN_INJECTION
@@ -285,7 +282,7 @@ class KotlinLanguageInjector(
         for (reference in callee.references) {
             ProgressManager.checkCanceled()
 
-            val resolvedTo = reference.resolve()
+            val resolvedTo = allowResolveInWriteAction { reference.resolve() }
             if (resolvedTo is PsiMethod) {
                 val injectionForJavaMethod = injectionForJavaMethod(argument, resolvedTo)
                 if (injectionForJavaMethod != null) {
@@ -310,12 +307,13 @@ class KotlinLanguageInjector(
     }
 
     private fun injectInAnnotationCall(host: KtElement): InjectionInfo? {
-        if (!annotationInjectionsEnabled) return null
         val argument = host.parent as? KtValueArgument ?: return null
         val annotationEntry = argument.parent.parent as? KtCallElement ?: return null
         if (!fastCheckInjectionsExists(annotationEntry)) return null
         val calleeExpression = annotationEntry.calleeExpression ?: return null
-        val callee = getNameReference(calleeExpression)?.mainReference?.resolve()
+        val callee = getNameReference(calleeExpression)?.mainReference?.let { reference ->
+            allowResolveInWriteAction { reference.resolve() }
+        }
         when (callee) {
             is PsiClass -> {
                 val psiClass = callee as? PsiClass ?: return null
@@ -361,8 +359,10 @@ class KotlinLanguageInjector(
         // Found psi element after resolve can be obtained from compiled declaration but annotations parameters are lost there.
         // Search for original descriptor from reference.
         val ktReference = reference as? KtReference ?: return null
-        val bindingContext = ktReference.element.analyze(BodyResolveMode.PARTIAL_WITH_DIAGNOSTICS)
-        val functionDescriptor = ktReference.resolveToDescriptors(bindingContext).singleOrNull() as? FunctionDescriptor ?: return null
+        val functionDescriptor = allowResolveInWriteAction {
+            val bindingContext = ktReference.element.analyze(BodyResolveMode.PARTIAL_WITH_DIAGNOSTICS)
+            ktReference.resolveToDescriptors(bindingContext).singleOrNull() as? FunctionDescriptor
+        } ?: return null
 
         val parameterDescriptor = functionDescriptor.valueParameters.getOrNull(argumentIndex) ?: return null
         return injectionInfoByAnnotation(parameterDescriptor)

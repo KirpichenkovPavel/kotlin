@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.util
@@ -86,7 +86,7 @@ fun ModuleDescriptor.actualsFor(descriptor: MemberDescriptor, checkCompatible: B
         } else {
             descriptor.findAnyActualForExpected(this@actualsFor)
         }
-    }
+    }.filter { (it as? MemberDescriptor)?.isEffectivelyActual() == true }
 
 private fun DeclarationDescriptor.actualsForExpected(): Collection<DeclarationDescriptor> {
     if (this is MemberDescriptor) {
@@ -129,8 +129,11 @@ fun KtDeclaration.isEffectivelyActual(): Boolean {
     if (hasActualModifier()) return true
 
     val descriptor = toDescriptor() as? MemberDescriptor ?: return false
-    return descriptor.isActual || descriptor.isEnumEntryInActual()
+    return descriptor.isEffectivelyActual()
 }
+
+private fun MemberDescriptor.isEffectivelyActual(): Boolean =
+    isActual || isEnumEntryInActual() || (this is ClassConstructorDescriptor && containingDeclaration.isEffectivelyActual())
 
 private fun MemberDescriptor.isEnumEntryInActual() =
     (DescriptorUtils.isEnumEntry(this) && (containingDeclaration as? MemberDescriptor)?.isActual == true)

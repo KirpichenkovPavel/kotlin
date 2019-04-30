@@ -1,17 +1,17 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 @file:JvmName("CommonIdePlatformUtil")
 package org.jetbrains.kotlin.platform.impl
 
+import org.jetbrains.kotlin.analyzer.common.CommonPlatform
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.cli.common.arguments.K2MetadataCompilerArguments
 import org.jetbrains.kotlin.config.TargetPlatformVersion
 import org.jetbrains.kotlin.platform.IdePlatform
 import org.jetbrains.kotlin.platform.IdePlatformKind
-import org.jetbrains.kotlin.resolve.TargetPlatform
 
 object CommonIdePlatformKind : IdePlatformKind<CommonIdePlatformKind>() {
 
@@ -20,7 +20,7 @@ object CommonIdePlatformKind : IdePlatformKind<CommonIdePlatformKind>() {
         else null
     }
 
-    override val compilerPlatform get() = TargetPlatform.Common
+    override val compilerPlatform get() = CommonPlatform
 
     override val platforms get() = listOf(Platform)
     override val defaultPlatform get() = Platform

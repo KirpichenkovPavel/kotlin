@@ -20,16 +20,21 @@ import org.jetbrains.kotlin.ir.IrElementBase
 import org.jetbrains.kotlin.ir.declarations.IrDeclaration
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationOrigin
 import org.jetbrains.kotlin.ir.declarations.IrDeclarationParent
+import org.jetbrains.kotlin.ir.declarations.MetadataSource
 import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrConstructorCall
 
 abstract class IrDeclarationBase(
     startOffset: Int,
     endOffset: Int,
-    override val origin: IrDeclarationOrigin
+    override var origin: IrDeclarationOrigin
 ) : IrElementBase(startOffset, endOffset),
     IrDeclaration {
 
     override lateinit var parent: IrDeclarationParent
 
-    override val annotations: MutableList<IrCall> = ArrayList()
+    override val annotations: MutableList<IrConstructorCall> = ArrayList()
+
+    override val metadata: MetadataSource?
+        get() = null
 }

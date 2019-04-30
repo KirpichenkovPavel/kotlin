@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.codegen;
@@ -19,6 +19,7 @@ import org.jetbrains.kotlin.codegen.inline.ReifiedTypeParametersUsages;
 import org.jetbrains.kotlin.codegen.inline.SourceMapper;
 import org.jetbrains.kotlin.codegen.state.GenerationState;
 import org.jetbrains.kotlin.codegen.state.KotlinTypeMapper;
+import org.jetbrains.kotlin.codegen.state.TypeMapperUtilsKt;
 import org.jetbrains.kotlin.descriptors.*;
 import org.jetbrains.kotlin.descriptors.annotations.AnnotatedImpl;
 import org.jetbrains.kotlin.descriptors.annotations.Annotations;
@@ -73,7 +74,7 @@ public abstract class MemberCodegen<T extends KtPureElement/* TODO: & KtDeclarat
     public final GenerationState state;
 
     protected final T element;
-    protected final FieldOwnerContext context;
+    protected final FieldOwnerContext<?> context;
 
     public final ClassBuilder v;
     public final FunctionCodegen functionCodegen;
@@ -260,7 +261,7 @@ public abstract class MemberCodegen<T extends KtPureElement/* TODO: & KtDeclarat
         int flags = ACC_DEPRECATED | ACC_STATIC | ACC_SYNTHETIC | AsmUtil.getVisibilityAccessFlag(descriptor);
         MethodVisitor mv = v.newMethod(JvmDeclarationOriginKt.OtherOrigin(descriptor), flags, syntheticMethod.getName(),
                                        syntheticMethod.getDescriptor(), null, null);
-        AnnotationCodegen.forMethod(mv, this, typeMapper).genAnnotations(new AnnotatedImpl(annotations), Type.VOID_TYPE);
+        AnnotationCodegen.forMethod(mv, this, state).genAnnotations(new AnnotatedImpl(annotations), Type.VOID_TYPE);
         mv.visitCode();
         mv.visitInsn(Opcodes.RETURN);
         mv.visitEnd();
@@ -454,15 +455,11 @@ public abstract class MemberCodegen<T extends KtPureElement/* TODO: & KtDeclarat
         if (clInit == null) {
             DeclarationDescriptor contextDescriptor = context.getContextDescriptor();
             SimpleFunctionDescriptorImpl clInitDescriptor = createClInitFunctionDescriptor(contextDescriptor);
-            MethodVisitor mv = createClInitMethodVisitor(contextDescriptor);
+            MethodVisitor mv =
+                    v.newMethod(JvmDeclarationOriginKt.OtherOrigin(contextDescriptor), ACC_STATIC, "<clinit>", "()V", null, null);
             clInit = new ExpressionCodegen(mv, new FrameMap(), Type.VOID_TYPE, context.intoFunction(clInitDescriptor), state, this);
         }
         return clInit;
-    }
-
-    @NotNull
-    public MethodVisitor createClInitMethodVisitor(@NotNull DeclarationDescriptor contextDescriptor) {
-        return v.newMethod(JvmDeclarationOriginKt.OtherOrigin(contextDescriptor), ACC_STATIC, "<clinit>", "()V", null, null);
     }
 
     @NotNull
@@ -493,9 +490,6 @@ public abstract class MemberCodegen<T extends KtPureElement/* TODO: & KtDeclarat
                 }
             }
         }
-    }
-
-    public void beforeMethodBody(@NotNull MethodVisitor mv) {
     }
 
     // Requires public access, because it is used by serialization plugin to generate initializer in synthetic constructor
@@ -873,7 +867,9 @@ public abstract class MemberCodegen<T extends KtPureElement/* TODO: & KtDeclarat
                 functionDescriptor,
                 accessorDescriptor instanceof AccessorForCallableDescriptor &&
                 (((AccessorForCallableDescriptor) accessorDescriptor).getSuperCallTarget() != null ||
-                 ((AccessorForCallableDescriptor) accessorDescriptor).getAccessorKind() == AccessorKind.JVM_DEFAULT_COMPATIBILITY)
+                 ((AccessorForCallableDescriptor) accessorDescriptor).getAccessorKind() == AccessorKind.JVM_DEFAULT_COMPATIBILITY),
+                (accessorDescriptor != null && TypeMapperUtilsKt.isInlineClassConstructorAccessor(accessorDescriptor)
+                 ? OwnerKind.ERASED_INLINE_CLASS : null)
         );
 
         boolean isJvmStaticInObjectOrClass = CodegenUtilKt.isJvmStaticInObjectOrClassOrInterface(functionDescriptor);
@@ -884,7 +880,9 @@ public abstract class MemberCodegen<T extends KtPureElement/* TODO: & KtDeclarat
         boolean accessorIsConstructor = accessorDescriptor instanceof AccessorForConstructorDescriptor;
 
         ReceiverParameterDescriptor dispatchReceiver = functionDescriptor.getDispatchReceiverParameter();
-        Type dispatchReceiverType = dispatchReceiver != null ? typeMapper.mapType(dispatchReceiver.getType()) : AsmTypes.OBJECT_TYPE;
+        Type dispatchReceiverType = dispatchReceiver != null && !accessorIsConstructor
+                                    ? typeMapper.mapType(dispatchReceiver.getType())
+                                    : AsmTypes.OBJECT_TYPE;
 
         int accessorParam = (hasDispatchReceiver && !accessorIsConstructor) ? 1 : 0;
         int reg = hasDispatchReceiver ? dispatchReceiverType.getSize() : 0;
@@ -924,7 +922,7 @@ public abstract class MemberCodegen<T extends KtPureElement/* TODO: & KtDeclarat
 
     public void generateAssertField() {
         if (jvmAssertFieldGenerated) return;
-        AssertCodegenUtilKt.generateAssertionsDisabledFieldInitialization(this);
+        AssertCodegenUtilKt.generateAssertionsDisabledFieldInitialization(v, createOrGetClInitCodegen().v);
         jvmAssertFieldGenerated = true;
     }
 

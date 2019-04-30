@@ -45,6 +45,7 @@ import org.jetbrains.kotlin.resolve.calls.model.ArgumentMatch
 import org.jetbrains.kotlin.resolve.lazy.BodyResolveMode
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.isError
+import org.jetbrains.kotlin.types.typeUtil.isTypeParameter
 import org.jetbrains.kotlin.utils.KotlinExceptionWithAttachments
 import org.jetbrains.kotlin.utils.SmartList
 
@@ -113,7 +114,7 @@ fun KtLambdaExpression.moveFunctionLiteralOutsideParenthesesIfPossible() {
 
 private fun shouldLambdaParameterBeNamed(args: List<ValueArgument>, callExpr: KtCallExpression): Boolean {
     if (args.any { it.isNamed() }) return true
-    val callee = (callExpr.calleeExpression?.mainReference?.resolve() as? KtFunction) ?: return true
+    val callee = (callExpr.calleeExpression?.mainReference?.resolve() as? KtFunction) ?: return false
     return if (callee.valueParameters.any { it.isVarArg }) true else callee.valueParameters.size - 1 > args.size
 }
 
@@ -138,8 +139,10 @@ fun KtCallExpression.canMoveLambdaOutsideParentheses(): Boolean {
         // if there are functions among candidates but none of them have last function parameter then not show the intention
         if (candidates.isNotEmpty() && candidates.none { candidate ->
                 val params = candidate.valueParameters
-                params.lastOrNull()?.type?.isFunctionOrSuspendFunctionType == true &&
-                        params.count { it.type.isFunctionOrSuspendFunctionType } == lambdaArgumentCount + referenceArgumentCount
+                val lastParamType = params.lastOrNull()?.type
+                (lastParamType?.isFunctionOrSuspendFunctionType == true || lastParamType?.isTypeParameter() == true) && params.count {
+                    it.type.let { type -> type.isFunctionOrSuspendFunctionType || type.isTypeParameter() }
+                } == lambdaArgumentCount + referenceArgumentCount
             }
         ) return false
     }
@@ -227,6 +230,10 @@ fun KtClass.getOrCreateCompanionObject(): KtObjectDeclaration {
 }
 
 fun KtDeclaration.toDescriptor(): DeclarationDescriptor? {
+    if (this is KtScriptInitializer) {
+        return null
+    }
+
     val bindingContext = analyze()
     // TODO: temporary code
     if (this is KtPrimaryConstructor) {
@@ -310,7 +317,10 @@ fun KtModifierListOwner.canBeProtected(): Boolean {
     }
 }
 
-fun KtModifierListOwner.canBeInternal(): Boolean = !isAnnotationClassPrimaryConstructor()
+fun KtModifierListOwner.canBeInternal(): Boolean {
+    if (containingClass()?.isInterface() == true && hasJvmFieldAnnotation()) return false
+    return !isAnnotationClassPrimaryConstructor()
+}
 
 private fun KtModifierListOwner.isAnnotationClassPrimaryConstructor(): Boolean =
     this is KtPrimaryConstructor && (this.parent as? KtClass)?.hasModifier(KtTokens.ANNOTATION_KEYWORD) ?: false
@@ -511,7 +521,7 @@ fun KtBlockStringTemplateEntry.canDropBraces() =
     expression is KtNameReferenceExpression && canPlaceAfterSimpleNameEntry(nextSibling)
 
 fun KtBlockStringTemplateEntry.dropBraces(): KtSimpleNameStringTemplateEntry {
-    val name = (expression as KtNameReferenceExpression).getReferencedName()
+    val name = (expression as KtNameReferenceExpression).getReferencedNameElement().text
     val newEntry = KtPsiFactory(this).createSimpleNameStringTemplateEntry(name)
     return replaced(newEntry)
 }

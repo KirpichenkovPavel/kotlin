@@ -1,13 +1,13 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.spec.utils
 
 import com.google.gson.*
 import com.google.gson.reflect.TypeToken
-import org.jetbrains.kotlin.spec.validators.*
+import org.jetbrains.kotlin.spec.models.LinkedSpecTest
 
 object TestsJsonMapBuilder {
     private val stringListType = object : TypeToken<List<String>>() {}.type
@@ -19,20 +19,20 @@ object TestsJsonMapBuilder {
     }
 
     fun buildJsonElement(testInfo: LinkedSpecTest, testsMap: JsonObject) {
-        val sectionElement = addJsonIfNotExist(testsMap, testInfo.section)
-        val paragraphElement = addJsonIfNotExist(sectionElement, testInfo.paragraphNumber)
-        val sentenceElement = addJsonIfNotExist(paragraphElement, testInfo.sentenceNumber)
+        val sectionElement = addJsonIfNotExist(testsMap, testInfo.sections[0])
+        val paragraphElement = addJsonIfNotExist(sectionElement, testInfo.place.paragraphNumber)
+        val sentenceElement = addJsonIfNotExist(paragraphElement, testInfo.place.sentenceNumber)
         val testAreaElement = addJsonIfNotExist(sentenceElement, testInfo.testArea.name.toLowerCase())
         val testTypeElement = addJsonIfNotExist(testAreaElement, testInfo.testType.type)
         val testNumberElement = addJsonIfNotExist(testTypeElement, testInfo.testNumber)
 
         testNumberElement.addProperty("description", testInfo.description)
-        testNumberElement.addProperty("caseNumber", testInfo.cases!!.size)
+        testNumberElement.addProperty("caseNumber", testInfo.cases.byFiles.size)
 
-        if (testInfo.unexpectedBehavior!!)
+        if (testInfo.unexpectedBehavior)
             testNumberElement.addProperty("unexpectedBehavior", testInfo.unexpectedBehavior)
 
-        if (testInfo.issues!!.isNotEmpty())
+        if (testInfo.issues.isNotEmpty())
             testNumberElement.add("issues", Gson().toJsonTree(testInfo.issues, stringListType))
     }
 }

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 /*
  * Based on GWT AbstractList
@@ -22,6 +22,11 @@ public actual abstract class AbstractMutableList<E> protected actual constructor
     abstract override fun removeAt(index: Int): E
     abstract override fun set(index: Int, element: E): E
 
+    /**
+     * Adds the specified element to the end of this list.
+     *
+     * @return `true` because the list is always modified as the result of this operation.
+     */
     actual override fun add(element: E): Boolean {
         add(size, element)
         return true

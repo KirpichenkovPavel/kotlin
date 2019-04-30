@@ -1,17 +1,15 @@
-// !WITH_CLASSES
-// !WITH_OBJECTS
 
 /*
- KOTLIN DIAGNOSTICS SPEC TEST (POSITIVE)
-
- SECTIONS: when-expression
- PARAGRAPH: 7
- SENTENCE: [1] Type test condition: type checking operator followed by type.
- NUMBER: 1
- DESCRIPTION: 'When' with bound value and type test condition.
+ * KOTLIN DIAGNOSTICS SPEC TEST (POSITIVE)
+ *
+ * SPEC VERSION: 0.1-draft
+ * PLACE: when-expression -> paragraph 7 -> sentence 1
+ * NUMBER: 1
+ * DESCRIPTION: 'When' with bound value and type test condition.
+ * HELPERS: classes, objects
  */
 
-// CASE DESCRIPTION: 'When' with type test condition on the various basic types.
+// TESTCASE NUMBER: 1
 fun case_1(value_1: Any): String {
     when (value_1) {
         is Int -> return ""
@@ -25,29 +23,29 @@ fun case_1(value_1: Any): String {
     return ""
 }
 
-// CASE DESCRIPTION: 'When' with type test condition on the various nullable basic types.
+// TESTCASE NUMBER: 2
 fun case_2(value_1: Any?): String = when (value_1) {
     is Int? -> "" // if value is null then this branch will be executed
     is Float -> ""
     else -> ""
 }
 
-// CASE DESCRIPTION: 'When' with 'else' branch and type test condition on Any.
+// TESTCASE NUMBER: 3
 fun case_3(value_1: Any?): String = when (value_1) {
     is Any -> ""
     else -> ""
 }
 
-// CASE DESCRIPTION: 'When' with 'else' branch and type test condition on nullable (redundant) Any.
+// TESTCASE NUMBER: 4
 fun case_4(value_1: Any): String = when (value_1) {
     <!USELESS_IS_CHECK!>is Any<!USELESS_NULLABLE_CHECK!>?<!><!> -> ""
     else -> ""
 }
 
 /*
- CASE DESCRIPTION: 'When' with 'else' branch and type test condition on the various nullable basic types (two nullable type check).
- UNEXPECTED BEHAVIOUR
- ISSUES: KT-22996
+ * TESTCASE NUMBER: 5
+ * UNEXPECTED BEHAVIOUR
+ * ISSUES: KT-22996
  */
 fun case_5(value_1: Any?): String = when (value_1) {
     is Double -> ""
@@ -59,11 +57,11 @@ fun case_5(value_1: Any?): String = when (value_1) {
     else -> ""
 }
 
-// CASE DESCRIPTION: 'When' with type test condition on the objetcs.
+// TESTCASE NUMBER: 6
 fun case_6(value_1: Any): String {
     when (value_1) {
-        is _EmptyObject -> return ""
-        is _ClassWithCompanionObject.Companion -> return ""
+        is EmptyObject -> return ""
+        is ClassWithCompanionObject.Companion -> return ""
     }
 
     return ""

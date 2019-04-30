@@ -1,17 +1,6 @@
 /*
- * Copyright 2010-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.configuration;
@@ -48,7 +37,9 @@ import org.jetbrains.kotlin.idea.versions.KotlinRuntimeLibraryUtilKt;
 import org.jetbrains.kotlin.platform.impl.JsIdePlatformKind;
 import org.jetbrains.kotlin.platform.impl.JvmIdePlatformKind;
 import org.jetbrains.kotlin.resolve.jvm.modules.JavaModuleKt;
+import org.jetbrains.kotlin.test.JUnit3WithIdeaConfigurationRunner;
 import org.jetbrains.kotlin.utils.PathUtil;
+import org.junit.runner.RunWith;
 
 import java.io.File;
 import java.io.IOException;
@@ -60,6 +51,7 @@ import java.util.stream.StreamSupport;
 import static java.util.Collections.emptyList;
 import static java.util.Collections.singletonList;
 
+@RunWith(JUnit3WithIdeaConfigurationRunner.class)
 public class ConfigureKotlinTest extends AbstractConfigureKotlinTest {
     public void testNewLibrary_copyJar() {
         doTestOneJavaModule(KotlinWithLibraryConfigurator.FileState.COPY);
@@ -118,8 +110,8 @@ public class ConfigureKotlinTest extends AbstractConfigureKotlinTest {
 
         // Move fake runtime jar to default library path to pretend library is already configured
         FileUtil.copy(
-                new File(getProject().getBasePath() + "/lib/kotlin-stdlib.jar"),
-                new File(Companion.getJAVA_CONFIGURATOR().getDefaultPathToJarFile(getProject()) + "/kotlin-stdlib.jar"));
+                new File(getProject().getBasePath() + "/lib/" + PathUtil.KOTLIN_JAVA_STDLIB_JAR),
+                new File(Companion.getJAVA_CONFIGURATOR().getDefaultPathToJarFile(getProject()) + "/" + PathUtil.KOTLIN_JAVA_STDLIB_JAR));
 
         Companion.assertNotConfigured(module, Companion.getJAVA_CONFIGURATOR());
         Companion.getJAVA_CONFIGURATOR().configure(myProject, Collections.<Module>emptyList());
@@ -161,28 +153,28 @@ public class ConfigureKotlinTest extends AbstractConfigureKotlinTest {
     }
 
     public void testJsLibraryWrongKind() {
-        doTestOneJsModule(KotlinWithLibraryConfigurator.FileState.EXISTS);
+        AbstractConfigureKotlinTest.Companion.assertProperlyConfigured(getModule(), AbstractConfigureKotlinTest.Companion.getJS_CONFIGURATOR());
         assertEquals(1, ModuleRootManager.getInstance(getModule()).orderEntries().process(new LibraryCountingRootPolicy(), 0).intValue());
     }
 
     public void testProjectWithoutFacetWithRuntime106WithoutLanguageLevel() {
-        assertEquals(LanguageVersion.KOTLIN_1_0, PlatformKt.getLanguageVersionSettings(myProject, null).getLanguageVersion());
         assertEquals(LanguageVersion.KOTLIN_1_0, PlatformKt.getLanguageVersionSettings(getModule()).getLanguageVersion());
+        assertEquals(LanguageVersion.KOTLIN_1_0, PlatformKt.getLanguageVersionSettings(myProject, null).getLanguageVersion());
     }
 
     public void testProjectWithoutFacetWithRuntime11WithoutLanguageLevel() {
-        assertEquals(LanguageVersion.LATEST_STABLE, PlatformKt.getLanguageVersionSettings(myProject, null).getLanguageVersion());
-        assertEquals(LanguageVersion.LATEST_STABLE, PlatformKt.getLanguageVersionSettings(getModule()).getLanguageVersion());
+        assertEquals(LanguageVersion.KOTLIN_1_1, PlatformKt.getLanguageVersionSettings(getModule()).getLanguageVersion());
+        assertEquals(LanguageVersion.KOTLIN_1_1, PlatformKt.getLanguageVersionSettings(myProject, null).getLanguageVersion());
     }
 
     public void testProjectWithoutFacetWithRuntime11WithLanguageLevel10() {
-        assertEquals(LanguageVersion.KOTLIN_1_0, PlatformKt.getLanguageVersionSettings(myProject, null).getLanguageVersion());
         assertEquals(LanguageVersion.KOTLIN_1_0, PlatformKt.getLanguageVersionSettings(getModule()).getLanguageVersion());
+        assertEquals(LanguageVersion.KOTLIN_1_0, PlatformKt.getLanguageVersionSettings(myProject, null).getLanguageVersion());
     }
 
     public void testProjectWithFacetWithRuntime11WithLanguageLevel10() {
-        assertEquals(LanguageVersion.LATEST_STABLE, PlatformKt.getLanguageVersionSettings(myProject, null).getLanguageVersion());
         assertEquals(LanguageVersion.KOTLIN_1_0, PlatformKt.getLanguageVersionSettings(getModule()).getLanguageVersion());
+        assertEquals(LanguageVersion.LATEST_STABLE, PlatformKt.getLanguageVersionSettings(myProject, null).getLanguageVersion());
     }
 
     public void testJsLibraryVersion11() {
@@ -280,6 +272,11 @@ public class ConfigureKotlinTest extends AbstractConfigureKotlinTest {
         assertEquals(LanguageFeature.State.ENABLED, CoroutineSupport.byCompilerArguments(arguments));
         assertEquals("1.7", arguments.getJvmTarget());
         assertEquals("-version -Xallow-kotlin-package -Xskip-metadata-version-check", settings.getCompilerSettings().getAdditionalArguments());
+    }
+
+    public void testJvmProjectWithJvmTarget11() {
+        KotlinFacetSettings settings = KotlinFacetSettingsProvider.Companion.getInstance(myProject).getInitializedSettings(getModule());
+        assertEquals(new JvmIdePlatformKind.Platform(JvmTarget.JVM_11), settings.getPlatform());
     }
 
     public void testImplementsDependency() {

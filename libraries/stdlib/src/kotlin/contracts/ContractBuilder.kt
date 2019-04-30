@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlin.contracts
@@ -122,7 +122,7 @@ public enum class InvocationKind {
 }
 
 /**
- * Specifies the contact of a function.
+ * Specifies the contract of a function.
  *
  * The contract description must be at the beginning of a function and have at least one effect.
  *

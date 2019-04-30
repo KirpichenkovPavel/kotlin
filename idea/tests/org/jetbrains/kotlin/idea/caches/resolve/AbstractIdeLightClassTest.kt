@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.caches.resolve
@@ -272,7 +272,7 @@ object LightClassLazinessChecker {
             }
             clsAnnotations.zip(lightAnnotations).forEach {
                 (clsAnnotation, lightAnnotation) ->
-                if (lightAnnotation !is KtLightNullabilityAnnotation)
+                if (lightAnnotation !is KtLightNullabilityAnnotation<*>)
                     assertNotNull(
                         lightAnnotation!!.nameReferenceElement,
                         "nameReferenceElement should be not null for $lightAnnotation of ${lightAnnotation.javaClass}"

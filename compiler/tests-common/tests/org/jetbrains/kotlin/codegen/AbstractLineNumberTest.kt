@@ -72,7 +72,7 @@ abstract class AbstractLineNumberTest : CodegenTestCase() {
         val labels = arrayListOf<Label>()
         val labels2LineNumbers = HashMap<Label, String>()
 
-        val visitor = object : ClassVisitor(Opcodes.ASM5) {
+        val visitor = object : ClassVisitor(Opcodes.API_VERSION) {
             override fun visitMethod(
                 access: Int,
                 name: String,
@@ -95,7 +95,7 @@ abstract class AbstractLineNumberTest : CodegenTestCase() {
         labels: ArrayList<Label>,
         labels2LineNumbers: HashMap<Label, String>
     ): MethodVisitor {
-        return object : MethodVisitor(Opcodes.ASM5) {
+        return object : MethodVisitor(Opcodes.API_VERSION) {
             private var lastLabel: Label? = null
 
             override fun visitMethodInsn(opcode: Int, owner: String, name: String, desc: String, itf: Boolean) {
@@ -110,7 +110,7 @@ abstract class AbstractLineNumberTest : CodegenTestCase() {
             }
 
             override fun visitLineNumber(line: Int, start: Label) {
-                labels2LineNumbers[start] = Integer.toString(line)
+                labels2LineNumbers[start] = line.toString()
             }
         }
     }
@@ -119,7 +119,7 @@ abstract class AbstractLineNumberTest : CodegenTestCase() {
         val result = ArrayList<String>()
         val visitedLabels = HashSet<String>()
 
-        reader.accept(object : ClassVisitor(Opcodes.ASM5) {
+        reader.accept(object : ClassVisitor(Opcodes.API_VERSION) {
             override fun visitMethod(
                 access: Int,
                 name: String,
@@ -127,7 +127,7 @@ abstract class AbstractLineNumberTest : CodegenTestCase() {
                 signature: String?,
                 exceptions: Array<String>?
             ): MethodVisitor {
-                return object : MethodVisitor(Opcodes.ASM5) {
+                return object : MethodVisitor(Opcodes.API_VERSION) {
                     override fun visitLineNumber(line: Int, label: Label) {
                         val overrides = !visitedLabels.add(label.toString())
 
@@ -147,7 +147,7 @@ abstract class AbstractLineNumberTest : CodegenTestCase() {
         for (i in lines.indices) {
             val matcher = TEST_LINE_NUMBER_PATTERN.matcher(lines[i])
             if (matcher.matches()) {
-                lineNumbers.add(Integer.toString(i + 1))
+                lineNumbers.add((i + 1).toString())
             }
         }
 

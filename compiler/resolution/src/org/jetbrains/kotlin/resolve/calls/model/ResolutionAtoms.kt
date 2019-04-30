@@ -1,18 +1,13 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls.model
 
-import org.jetbrains.kotlin.builtins.getReceiverTypeFromFunctionType
-import org.jetbrains.kotlin.builtins.getReturnTypeFromFunctionType
-import org.jetbrains.kotlin.builtins.getValueParameterTypesFromFunctionType
 import org.jetbrains.kotlin.descriptors.CallableDescriptor
 import org.jetbrains.kotlin.descriptors.ValueParameterDescriptor
-import org.jetbrains.kotlin.resolve.calls.components.CallableReferenceCandidate
-import org.jetbrains.kotlin.resolve.calls.components.TypeArgumentsToParametersMapper
-import org.jetbrains.kotlin.resolve.calls.components.getFunctionTypeFromCallableReferenceExpectedType
+import org.jetbrains.kotlin.resolve.calls.components.*
 import org.jetbrains.kotlin.resolve.calls.inference.components.FreshVariableNewTypeSubstitutor
 import org.jetbrains.kotlin.resolve.calls.inference.model.ConstraintStorage
 import org.jetbrains.kotlin.resolve.calls.inference.model.TypeVariableForLambdaReturnType
@@ -99,7 +94,8 @@ class ResolvedLambdaAtom(
     val receiver: UnwrappedType?,
     val parameters: List<UnwrappedType>,
     val returnType: UnwrappedType,
-    val typeVariableForLambdaReturnType: TypeVariableForLambdaReturnType?
+    val typeVariableForLambdaReturnType: TypeVariableForLambdaReturnType?,
+    val expectedType: UnwrappedType?
 ) : PostponedResolvedAtom() {
     lateinit var resultArguments: List<KotlinCallArgument>
         private set
@@ -116,7 +112,7 @@ class ResolvedLambdaAtom(
     override val outputType: UnwrappedType get() = returnType
 }
 
-class ResolvedCallableReferenceAtom(
+abstract class ResolvedCallableReferenceAtom(
     override val atom: CallableReferenceKotlinCallArgument,
     val expectedType: UnwrappedType?
 ) : PostponedResolvedAtom() {
@@ -131,19 +127,28 @@ class ResolvedCallableReferenceAtom(
         setAnalyzedResults(subResolvedAtoms)
     }
 
+}
+
+class EagerCallableReferenceAtom(
+    atom: CallableReferenceKotlinCallArgument,
+    expectedType: UnwrappedType?
+) : ResolvedCallableReferenceAtom(atom, expectedType) {
+
+    override val inputTypes: Collection<UnwrappedType> get() = emptyList()
+    override val outputType: UnwrappedType? get() = null
+
+    fun transformToPostponed(): PostponedCallableReferenceAtom = PostponedCallableReferenceAtom(this)
+}
+
+class PostponedCallableReferenceAtom(
+    eagerCallableReferenceAtom: EagerCallableReferenceAtom
+) : ResolvedCallableReferenceAtom(eagerCallableReferenceAtom.atom, eagerCallableReferenceAtom.expectedType) {
+
     override val inputTypes: Collection<UnwrappedType>
-        get() {
-            val functionType = getFunctionTypeFromCallableReferenceExpectedType(expectedType) ?: return listOfNotNull(expectedType)
-            val parameters = functionType.getValueParameterTypesFromFunctionType().map { it.type.unwrap() }
-            val receiver = functionType.getReceiverTypeFromFunctionType()?.unwrap()
-            return receiver?.let { parameters + it } ?: parameters
-        }
+        get() = extractInputOutputTypesFromCallableReferenceExpectedType(expectedType)?.inputTypes ?: listOfNotNull(expectedType)
 
     override val outputType: UnwrappedType?
-        get() {
-            val functionType = getFunctionTypeFromCallableReferenceExpectedType(expectedType) ?: return null
-            return functionType.getReturnTypeFromFunctionType().unwrap()
-        }
+        get() = extractInputOutputTypesFromCallableReferenceExpectedType(expectedType)?.outputType
 }
 
 class ResolvedCollectionLiteralAtom(
@@ -198,8 +203,10 @@ class ErrorCallResolutionResult(
 ) : SingleCallResolutionResult(resultCallAtom, diagnostics, constraintSystem)
 
 class AllCandidatesResolutionResult(
-    val allCandidates: Collection<KotlinResolutionCandidate>
+    val allCandidates: Collection<CandidateWithDiagnostics>
 ) : CallResolutionResult(null, emptyList(), ConstraintStorage.Empty)
+
+data class CandidateWithDiagnostics(val candidate: KotlinResolutionCandidate, val diagnostics: List<KotlinCallDiagnostic>)
 
 fun CallResolutionResult.resultCallAtom(): ResolvedCallAtom? =
     if (this is SingleCallResolutionResult) resultCallAtom else null

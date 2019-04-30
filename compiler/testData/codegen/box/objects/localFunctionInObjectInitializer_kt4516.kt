@@ -1,4 +1,4 @@
-// IGNORE_BACKEND: JVM_IR
+// KJS_WITH_FULL_RUNTIME
 
 object O {
     val mmmap = HashMap<String, Int>();

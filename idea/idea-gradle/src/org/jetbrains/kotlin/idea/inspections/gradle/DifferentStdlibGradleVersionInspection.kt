@@ -24,13 +24,13 @@ import org.jetbrains.kotlin.idea.inspections.gradle.GradleHeuristicHelper.PRODUC
 import org.jetbrains.kotlin.idea.platform.tooling
 import org.jetbrains.kotlin.platform.impl.JvmIdePlatformKind
 import org.jetbrains.kotlin.psi.psiUtil.getStrictParentOfType
-import org.jetbrains.plugins.gradle.codeInspection.GradleBaseInspection
+import org.jetbrains.plugins.groovy.codeInspection.BaseInspection
 import org.jetbrains.plugins.groovy.codeInspection.BaseInspectionVisitor
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.blocks.GrClosableBlock
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.GrMethodCall
 import org.jetbrains.plugins.groovy.lang.psi.api.statements.expressions.path.GrCallExpression
 
-class DifferentStdlibGradleVersionInspection : GradleBaseInspection() {
+class DifferentStdlibGradleVersionInspection : BaseInspection() {
     override fun buildVisitor(): BaseInspectionVisitor = MyVisitor(KOTLIN_GROUP_ID, JvmIdePlatformKind.tooling.mavenLibraryIds)
 
     override fun buildErrorString(vararg args: Any) =
@@ -68,7 +68,11 @@ class DifferentStdlibGradleVersionInspection : GradleBaseInspection() {
     companion object {
         private fun findLibraryStatement(closure: GrClosableBlock, libraryGroup: String, libraryIds: List<String>): GrCallExpression? {
             return GradleHeuristicHelper.findStatementWithPrefixes(closure, PRODUCTION_DEPENDENCY_STATEMENTS).firstOrNull { statement ->
-                libraryIds.any { it in statement.text } && statement.text.contains(libraryGroup)
+                libraryIds.any {
+                    val index = statement.text.indexOf(it)
+                    // This prevents detecting kotlin-stdlib inside kotlin-stdlib-common, -jdk8, etc.
+                    index != -1 && statement.text.getOrNull(index + it.length) != '-'
+                } && statement.text.contains(libraryGroup)
             }
         }
 

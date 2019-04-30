@@ -27,7 +27,7 @@ class SyntheticKotlinBlock(
         private val indent: Indent?,
         private val wrap: Wrap?,
         private val spacingBuilder: KotlinSpacingBuilder,
-        private val createSyntheticSpacingNodeBlock: (ASTNode) -> ASTBlock
+        private val createParentSyntheticSpacingBlock: (ASTNode) -> ASTBlock
 ) : ASTBlock {
 
     private val textRange = TextRange(
@@ -44,7 +44,7 @@ class SyntheticKotlinBlock(
     override fun isLeaf() = false
     override fun getNode() = node
     override fun getSpacing(child1: Block?, child2: Block): Spacing? {
-        return spacingBuilder.getSpacing(createSyntheticSpacingNodeBlock(node.treeParent!!), child1, child2)
+        return spacingBuilder.getSpacing(createParentSyntheticSpacingBlock(node), child1, child2)
     }
 
 
@@ -60,13 +60,11 @@ class SyntheticKotlinBlock(
         }
 
         val textRange = getTextRange()
-        if (treeNode != null) {
-            val psi = treeNode.psi
-            if (psi != null) {
-                val file = psi.containingFile
-                if (file != null) {
-                    return file.text!!.subSequence(textRange.startOffset, textRange.endOffset).toString() + " " + textRange
-                }
+        val psi = treeNode.psi
+        if (psi != null) {
+            val file = psi.containingFile
+            if (file != null) {
+                return file.text!!.subSequence(textRange.startOffset, textRange.endOffset).toString() + " " + textRange
             }
         }
 

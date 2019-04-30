@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.jps.model
@@ -41,7 +41,7 @@ val JpsModule.expectedByModules: List<JpsModule>
 private fun JpsModule.findDependencies(moduleNames: List<String>?): List<JpsModule> {
     if (moduleNames == null || moduleNames.isEmpty()) return listOf()
 
-    val result = ArrayList<JpsModule>(moduleNames.size)
+    val result = mutableSetOf<JpsModule>()
 
     JpsJavaExtensionService.dependencies(this)
         .processModules {
@@ -51,7 +51,7 @@ private fun JpsModule.findDependencies(moduleNames: List<String>?): List<JpsModu
             }
         }
 
-    return result
+    return result.toList()
 }
 
 val JpsModule.productionOutputFilePath: String?

@@ -43,7 +43,6 @@ import org.jetbrains.kotlin.resolve.calls.callUtil.getType
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedCall
 import org.jetbrains.kotlin.resolve.calls.model.ResolvedValueArgument
 import org.jetbrains.kotlin.resolve.descriptorUtil.declaresOrInheritsDefaultValue
-import org.jetbrains.kotlin.resolve.jvm.annotations.findJvmOverloadsAnnotation
 import org.jetbrains.kotlin.resolve.source.getPsi
 import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.TypeUtils
@@ -104,8 +103,7 @@ class KtLightAnnotationForSourceEntry(
     }
 
     private fun getAttributeValue(name: String?, useDefault: Boolean): PsiAnnotationMemberValue? {
-        val name = name ?: "value"
-        val callEntry = getCallEntry(name) ?: return null
+        val callEntry = getCallEntry(name ?: "value") ?: return null
 
         val valueArgument = callEntry.value.arguments.firstOrNull()
         if (valueArgument != null) {
@@ -158,9 +156,13 @@ class KtLightAnnotationForSourceEntry(
             val valueArguments = callEntry.value.arguments
             val argument = valueArguments.firstOrNull()?.getArgumentExpression() ?: return null
 
-            if (!callEntry.key.type.let { KotlinBuiltIns.isArray(it) }) return null
+            if (!callEntry.key.type.let { KotlinBuiltIns.isArrayOrPrimitiveArray(it) }) return null
 
-            if (argument !is KtStringTemplateExpression && argument !is KtConstantExpression && getAnnotationName(argument) == null) {
+            if (argument !is KtStringTemplateExpression &&
+                argument !is KtConstantExpression &&
+                argument !is KtClassLiteralExpression &&
+                getAnnotationName(argument) == null
+            ) {
                 return null
             }
 
@@ -233,7 +235,7 @@ class KtLightEmptyAnnotationParameterList(parent: PsiElement) : KtLightElementBa
     override fun getAttributes(): Array<PsiNameValuePair> = emptyArray()
 }
 
-class KtLightNullabilityAnnotation(val member: KtLightElement<*, PsiModifierListOwner>, parent: PsiElement) :
+open class KtLightNullabilityAnnotation<D : KtLightElement<*, PsiModifierListOwner>>(val member: D, parent: PsiElement) :
     KtLightAbstractAnnotation(parent, {
     // searching for last because nullability annotations are generated after backend generates source annotations
         getClsNullabilityAnnotation(member) ?: KtLightNonExistentAnnotation(member)
@@ -259,7 +261,6 @@ class KtLightNullabilityAnnotation(val member: KtLightElement<*, PsiModifierList
 
         if (annotatedElement is KtParameter) {
             if (annotatedElement.containingClassOrObject?.isAnnotation() == true) return null
-            if (isNullableInJvmOverloads(annotatedElement)) return Nullable::class.java.name
         }
 
         // don't annotate property setters
@@ -286,13 +287,6 @@ class KtLightNullabilityAnnotation(val member: KtLightElement<*, PsiModifierList
             TypeNullability.NULLABLE -> Nullable::class.java.name
             TypeNullability.FLEXIBLE -> null
         }
-    }
-
-    private fun isNullableInJvmOverloads(annotatedElement: KtParameter): Boolean {
-        if (annotatedElement.ownerFunction?.let { it.analyze()[BindingContext.DECLARATION_TO_DESCRIPTOR, it]?.findJvmOverloadsAnnotation() } == null) return false
-        val lightParameterList = (member as? PsiParameter)?.parent as? PsiParameterList ?: return false
-        val lastParameter = (lightParameterList.parameters.lastOrNull() as? KtLightElement<*, *>)?.kotlinOrigin
-        return lastParameter == annotatedElement
     }
 
     internal fun KtTypeReference.getType(): KotlinType? = analyze()[BindingContext.TYPE, this]
@@ -346,7 +340,7 @@ private fun KtElement.getResolvedCall(): ResolvedCall<out CallableDescriptor>? {
 }
 
 fun convertToLightAnnotationMemberValue(lightParent: PsiElement, argument: KtExpression): PsiAnnotationMemberValue {
-    val argument = unwrapCall(argument)
+    @Suppress("NAME_SHADOWING") val argument = unwrapCall(argument)
     when (argument) {
         is KtClassLiteralExpression -> {
             return KtLightPsiClassObjectAccessExpression(argument, lightParent)
@@ -400,7 +394,7 @@ private fun unwrapCall(callee: KtExpression): KtExpression = when (callee) {
 }
 
 private fun getAnnotationName(callee: KtExpression): String? {
-    val callee = unwrapCall(callee)
+    @Suppress("NAME_SHADOWING") val callee = unwrapCall(callee)
     val resultingDescriptor = callee.getResolvedCall()?.resultingDescriptor
     if (resultingDescriptor is ClassConstructorDescriptor) {
         val ktClass = resultingDescriptor.constructedClass.source.getPsi() as? KtClass
@@ -413,7 +407,7 @@ private fun getAnnotationName(callee: KtExpression): String? {
     return null
 }
 
-@TestOnly
+@get:TestOnly
 var accessAnnotationsClsDelegateIsAllowed = false
 
 @TestOnly

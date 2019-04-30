@@ -16,7 +16,7 @@ apply plugin: 'kotlin-multiplatform'
 repositories {
     mavenLocal()
     jcenter()
-    maven { url  "http://dl.bintray.com/kotlin/kotlinx.html/" }
+    maven { url  "https://dl.bintray.com/kotlin/kotlinx.html/" }
 }
 
 kotlin {
@@ -37,7 +37,8 @@ kotlin {
         }
         configure([main, jvmWithoutJavaMain]) {
         	dependencies {
-        		implementation 'org.jetbrains.kotlin:kotlin-stdlib'
+				implementation 'org.jetbrains.kotlin:kotlin-stdlib'
+        		implementation 'org.jetbrains.kotlin:kotlin-script-runtime'
         	}
         }
         configure([test, jvmWithoutJavaTest]) {

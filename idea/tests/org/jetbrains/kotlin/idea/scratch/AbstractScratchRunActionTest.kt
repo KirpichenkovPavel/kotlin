@@ -1,17 +1,6 @@
 /*
- * Copyright 2010-2017 JetBrains s.r.o.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- * http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * Copyright 2010-2019 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.scratch
@@ -32,16 +21,21 @@ import com.intellij.testFramework.MapDataContext
 import com.intellij.testFramework.PsiTestUtil
 import com.intellij.testFramework.TestActionEvent
 import com.intellij.util.ui.UIUtil
+import org.jetbrains.kotlin.codegen.forTestCompile.ForTestCompileRuntime
 import org.jetbrains.kotlin.idea.KotlinLanguage
 import org.jetbrains.kotlin.idea.core.script.ScriptDependenciesManager
 import org.jetbrains.kotlin.idea.highlighter.KotlinHighlightingUtil
 import org.jetbrains.kotlin.idea.scratch.actions.RunScratchAction
+import org.jetbrains.kotlin.idea.scratch.actions.ScratchCompilationSupport
 import org.jetbrains.kotlin.idea.scratch.output.InlayScratchFileRenderer
+import org.jetbrains.kotlin.idea.test.KotlinLightProjectDescriptor
 import org.jetbrains.kotlin.idea.test.KotlinWithJdkAndRuntimeLightProjectDescriptor
 import org.jetbrains.kotlin.idea.test.PluginTestCaseBase
 import org.jetbrains.kotlin.idea.util.application.runWriteAction
+import org.jetbrains.kotlin.test.InTextDirectivesUtils
 import org.jetbrains.kotlin.test.KotlinTestUtils
 import org.jetbrains.kotlin.test.MockLibraryUtil
+import org.jetbrains.kotlin.utils.PathUtil
 import org.junit.Assert
 import java.io.File
 import java.util.*
@@ -70,16 +64,16 @@ abstract class AbstractScratchRunActionTest : FileEditorManagerTestCase() {
         javaFiles.forEach { myFixture.copyFileToProject(it.path, FileUtil.getRelativePath(baseDir, it)!!) }
         kotlinFiles.forEach { myFixture.copyFileToProject(it.path, FileUtil.getRelativePath(baseDir, it)!!) }
 
-        val outputDir = myFixture.tempDirFixture.findOrCreateDir("out")
-
-        MockLibraryUtil.compileKotlin(baseDir.path, File(outputDir.path))
+        val outputDir = createTempDir(dirName)
 
         if (javaFiles.isNotEmpty()) {
-            val options = Arrays.asList("-d", outputDir.path)
+            val options = listOf("-d", outputDir.path)
             KotlinTestUtils.compileJavaFiles(javaFiles, options)
         }
 
-        PsiTestUtil.setCompilerOutputPath(myModule, outputDir.url, false)
+        MockLibraryUtil.compileKotlin(baseDir.path, outputDir)
+
+        PsiTestUtil.setCompilerOutputPath(myModule, outputDir.path, false)
 
         val mainFileName = "$dirName/${getTestName(true)}.kts"
         doCompilingTest(mainFileName)
@@ -94,15 +88,7 @@ abstract class AbstractScratchRunActionTest : FileEditorManagerTestCase() {
         val sourceFile = File(testDataPath, fileName)
         val fileText = sourceFile.readText()
 
-        val scratchFile = ScratchRootType.getInstance().createScratchFile(
-            project,
-            sourceFile.name,
-            KotlinLanguage.INSTANCE,
-            fileText,
-            ScratchFileService.Option.create_if_missing
-        ) ?: error("Couldn't create scratch file ${sourceFile.path}")
-
-        myFixture.openFileInEditor(scratchFile)
+        val scratchFile = createScratchFile(sourceFile.name, fileText)
 
         ScriptDependenciesManager.updateScriptDependenciesSynchronously(scratchFile, project)
 
@@ -110,22 +96,16 @@ abstract class AbstractScratchRunActionTest : FileEditorManagerTestCase() {
 
         if (!KotlinHighlightingUtil.shouldHighlight(psiFile)) error("Highlighting for scratch file is switched off")
 
-        val (editor, scratchPanel) = getEditorWithScratchPanel(myManager, scratchFile)?: error("Couldn't find scratch panel")
-        scratchPanel.setReplMode(isRepl)
-
-        val action = RunScratchAction()
-        val event = getActionEvent(scratchFile, action)
-        launchAction(event, action)
-
-        UIUtil.dispatchAllInvocationEvents()
-
-        val start = System.currentTimeMillis()
-        // wait until output is displayed in editor or for 1 minute
-        while (!event.presentation.isEnabled && (System.currentTimeMillis() - start) < 60000) {
-            Thread.sleep(100)
+        val (editor, scratchPanel) = getEditorWithScratchPanel(myManager, scratchFile) ?: error("Couldn't find scratch panel")
+        scratchPanel.scratchFile.saveOptions {
+            copy(isRepl = isRepl, isInteractiveMode = false)
         }
 
-        UIUtil.dispatchAllInvocationEvents()
+        if (!InTextDirectivesUtils.isDirectiveDefined(fileText, "// NO_MODULE")) {
+            scratchPanel.setModule(myFixture.module)
+        }
+
+        launchScratch(scratchFile)
 
         val doc = PsiDocumentManager.getInstance(project).getDocument(psiFile) ?: error("Document for ${psiFile.name} is null")
 
@@ -138,7 +118,10 @@ abstract class AbstractScratchRunActionTest : FileEditorManagerTestCase() {
                 .filterIsInstance<InlayScratchFileRenderer>()
                 .forEach {
                     val str = it.toString()
-                    val offset = doc.getLineEndOffset(line); actualOutput.insert(offset, "${str.takeWhile { it.isWhitespace() }}// ${str.trim()}")
+                    val offset = doc.getLineEndOffset(line); actualOutput.insert(
+                    offset,
+                    "${str.takeWhile { it.isWhitespace() }}// ${str.trim()}"
+                )
                 }
         }
 
@@ -151,10 +134,36 @@ abstract class AbstractScratchRunActionTest : FileEditorManagerTestCase() {
         KotlinTestUtils.assertEqualsToFile(expectedFile, actualOutput.toString())
     }
 
-    private fun launchAction(e: TestActionEvent, action: AnAction) {
+    protected fun createScratchFile(name: String, text: String): VirtualFile {
+        val scratchFile = ScratchRootType.getInstance().createScratchFile(
+            project,
+            name,
+            KotlinLanguage.INSTANCE,
+            text,
+            ScratchFileService.Option.create_if_missing
+        ) ?: error("Couldn't create scratch file")
+
+        myFixture.openFileInEditor(scratchFile)
+        return scratchFile
+    }
+
+    protected fun launchScratch(scratchFile: VirtualFile) {
+        val action = RunScratchAction()
+        val e = getActionEvent(scratchFile, action)
+
         action.beforeActionPerformedUpdate(e)
         Assert.assertTrue(e.presentation.isEnabled && e.presentation.isVisible)
         action.actionPerformed(e)
+
+        UIUtil.dispatchAllInvocationEvents()
+
+        val start = System.currentTimeMillis()
+        // wait until output is displayed in editor or for 1 minute
+        while (ScratchCompilationSupport.isAnyInProgress() && (System.currentTimeMillis() - start) < 60000) {
+            Thread.sleep(100)
+        }
+
+        UIUtil.dispatchAllInvocationEvents()
     }
 
     private fun getActionEvent(virtualFile: VirtualFile, action: AnAction): TestActionEvent {
@@ -167,7 +176,16 @@ abstract class AbstractScratchRunActionTest : FileEditorManagerTestCase() {
 
     override fun getTestDataPath() = KotlinTestUtils.getHomeDirectory()
 
-    override fun getProjectDescriptor() = KotlinWithJdkAndRuntimeLightProjectDescriptor.INSTANCE_FULL_JDK
+
+    override fun getProjectDescriptor(): com.intellij.testFramework.LightProjectDescriptor {
+        val testName = getTestName(false)
+
+        return when {
+            testName.endsWith("WithKotlinTest") -> INSTANCE_WITH_KOTLIN_TEST
+            testName.endsWith("NoRuntime") -> INSTANCE_WITHOUT_RUNTIME
+            else -> KotlinWithJdkAndRuntimeLightProjectDescriptor.INSTANCE_FULL_JDK
+        }
+    }
 
     override fun setUp() {
         super.setUp()
@@ -184,6 +202,21 @@ abstract class AbstractScratchRunActionTest : FileEditorManagerTestCase() {
 
         ScratchFileService.getInstance().scratchesMapping.mappings.forEach { file, _ ->
             runWriteAction { file.delete(this) }
+        }
+    }
+
+    companion object {
+        private val INSTANCE_WITH_KOTLIN_TEST = object : KotlinWithJdkAndRuntimeLightProjectDescriptor(
+            arrayListOf(
+                ForTestCompileRuntime.runtimeJarForTests(),
+                PathUtil.kotlinPathsForDistDirectory.kotlinTestPath
+            )
+        ) {
+            override fun getSdk() = PluginTestCaseBase.fullJdk()
+        }
+
+        private val INSTANCE_WITHOUT_RUNTIME = object : KotlinLightProjectDescriptor() {
+            override fun getSdk() = PluginTestCaseBase.fullJdk()
         }
     }
 }

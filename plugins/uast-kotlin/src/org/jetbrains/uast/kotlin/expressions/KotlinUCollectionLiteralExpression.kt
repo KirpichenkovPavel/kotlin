@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.uast.kotlin.expressions
@@ -14,11 +14,12 @@ import org.jetbrains.uast.*
 import org.jetbrains.uast.kotlin.KotlinAbstractUExpression
 import org.jetbrains.uast.kotlin.KotlinConverter
 import org.jetbrains.uast.kotlin.KotlinUElementWithType
+import org.jetbrains.uast.kotlin.internal.DelegatedMultiResolve
 
 class KotlinUCollectionLiteralExpression(
     override val sourcePsi: KtCollectionLiteralExpression,
     givenParent: UElement?
-) : KotlinAbstractUExpression(givenParent), UCallExpressionEx, KotlinUElementWithType {
+) : KotlinAbstractUExpression(givenParent), UCallExpressionEx, DelegatedMultiResolve, KotlinUElementWithType {
 
     override val classReference: UReferenceExpression? get() = null
 

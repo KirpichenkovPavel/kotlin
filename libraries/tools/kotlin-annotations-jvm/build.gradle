@@ -19,10 +19,15 @@ sourceSets {
     }
 }
 
+dependencies {
+    compile DependenciesKt.kotlinBuiltins(project)
+}
+
 artifacts {
     archives sourcesJar
-    archives javadocJar
 }
+
+javadocJar()
 
 dist {
     from (jar, sourcesJar)

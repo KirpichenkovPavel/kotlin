@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ide.konan.analyzer
@@ -15,7 +15,7 @@ import org.jetbrains.kotlin.descriptors.impl.ModuleDescriptorImpl
 import org.jetbrains.kotlin.frontend.di.createContainerForLazyResolve
 import org.jetbrains.kotlin.ide.konan.NativeLibraryInfo
 import org.jetbrains.kotlin.ide.konan.createPackageFragmentProvider
-import org.jetbrains.kotlin.resolve.BindingTraceContext
+import org.jetbrains.kotlin.resolve.CodeAnalyzerInitializer
 import org.jetbrains.kotlin.resolve.TargetEnvironment
 import org.jetbrains.kotlin.resolve.TargetPlatform
 import org.jetbrains.kotlin.resolve.konan.platform.KonanPlatform
@@ -48,7 +48,7 @@ object NativeAnalyzerFacade : ResolverForModuleFactory() {
         val container = createContainerForLazyResolve(
             moduleContext,
             declarationProviderFactory,
-            BindingTraceContext(),
+            CodeAnalyzerInitializer.getInstance(moduleContext.project).createTrace(),
             targetPlatform,
             TargetPlatformVersion.NoVersion,
             targetEnvironment,

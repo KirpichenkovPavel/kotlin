@@ -3,7 +3,7 @@ package org.jetbrains.kotlin.gradle.tasks
 import org.gradle.api.file.FileTree
 import org.gradle.api.file.SourceDirectorySet
 import org.gradle.api.logging.Logger
-import org.jetbrains.kotlin.gradle.plugin.kotlinDebug
+import org.jetbrains.kotlin.gradle.logging.kotlinDebug
 import org.jetbrains.kotlin.gradle.utils.isJavaFile
 import org.jetbrains.kotlin.gradle.utils.isKotlinFile
 import org.jetbrains.kotlin.gradle.utils.isParentOf
@@ -13,7 +13,7 @@ import java.util.*
 internal sealed class SourceRoots(val kotlinSourceFiles: List<File>) {
     private companion object {
         fun dumpPaths(files: Iterable<File>): String =
-                "[${files.map { it.canonicalPath }.sorted().joinToString(prefix = "\n\t", separator = ",\n\t")}]"
+            "[${files.map { it.canonicalPath }.sorted().joinToString(prefix = "\n\t", separator = ",\n\t")}]"
     }
 
     open fun log(taskName: String, logger: Logger) {
@@ -25,7 +25,8 @@ internal sealed class SourceRoots(val kotlinSourceFiles: List<File>) {
             fun create(taskSource: FileTree, sourceRoots: FilteringSourceRootsContainer, sourceFilesExtensions: List<String>): ForJvm {
                 val kotlinSourceFiles = (taskSource as Iterable<File>).filter { it.isKotlinFile(sourceFilesExtensions) }
                 val javaSourceRoots = findRootsForSources(
-                        sourceRoots.sourceRoots, taskSource.filter(File::isJavaFile))
+                    sourceRoots.sourceRoots, taskSource.filter(File::isJavaFile)
+                )
                 return ForJvm(kotlinSourceFiles, javaSourceRoots)
             }
 

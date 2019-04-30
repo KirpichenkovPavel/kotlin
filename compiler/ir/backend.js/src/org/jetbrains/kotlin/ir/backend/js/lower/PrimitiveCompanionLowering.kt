@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.ir.backend.js.lower
@@ -13,6 +13,7 @@ import org.jetbrains.kotlin.ir.expressions.IrExpression
 import org.jetbrains.kotlin.ir.expressions.IrGetObjectValue
 import org.jetbrains.kotlin.ir.expressions.impl.IrGetObjectValueImpl
 import org.jetbrains.kotlin.ir.types.isPrimitiveType
+import org.jetbrains.kotlin.ir.types.isString
 import org.jetbrains.kotlin.ir.util.defaultType
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
@@ -26,7 +27,7 @@ class PrimitiveCompanionLowering(val context: JsIrBackendContext) : FileLowering
                 val declaration = symbol.owner
                 if (!declaration.isCompanion) return expression
                 val parent = declaration.parent as IrClass
-                if (!parent.defaultType.isPrimitiveType()) return expression
+                if (!parent.defaultType.isPrimitiveType() && !parent.defaultType.isString()) return expression
                 val actualCompanion = context.primitiveCompanionObjects[parent.name] ?: return expression
                 return expression.run { IrGetObjectValueImpl(startOffset, endOffset, actualCompanion.owner.defaultType, actualCompanion) }
             }

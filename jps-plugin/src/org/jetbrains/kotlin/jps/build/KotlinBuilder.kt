@@ -23,12 +23,14 @@ import org.jetbrains.jps.builders.FileProcessor
 import org.jetbrains.jps.builders.impl.DirtyFilesHolderBase
 import org.jetbrains.jps.builders.java.JavaBuilderUtil
 import org.jetbrains.jps.builders.java.JavaSourceRootDescriptor
+import org.jetbrains.jps.builders.storage.BuildDataCorruptedException
 import org.jetbrains.jps.incremental.*
 import org.jetbrains.jps.incremental.ModuleLevelBuilder.ExitCode.*
 import org.jetbrains.jps.incremental.java.JavaBuilder
 import org.jetbrains.jps.incremental.storage.BuildDataManager
 import org.jetbrains.jps.model.JpsProject
 import org.jetbrains.kotlin.build.GeneratedFile
+import org.jetbrains.kotlin.cli.common.ExitCode
 import org.jetbrains.kotlin.cli.common.arguments.CommonCompilerArguments
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity
 import org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity.*
@@ -41,12 +43,12 @@ import org.jetbrains.kotlin.daemon.common.isDaemonEnabled
 import org.jetbrains.kotlin.incremental.*
 import org.jetbrains.kotlin.incremental.components.ExpectActualTracker
 import org.jetbrains.kotlin.incremental.components.LookupTracker
+import org.jetbrains.kotlin.incremental.ICReporterBase
 import org.jetbrains.kotlin.jps.incremental.JpsIncrementalCache
-import org.jetbrains.kotlin.jps.incremental.withLookupStorage
+import org.jetbrains.kotlin.jps.incremental.JpsLookupStorageManager
 import org.jetbrains.kotlin.jps.model.kotlinKind
 import org.jetbrains.kotlin.jps.targets.KotlinJvmModuleBuildTarget
 import org.jetbrains.kotlin.jps.targets.KotlinModuleBuildTarget
-import org.jetbrains.kotlin.jps.targets.KotlinUnsupportedModuleBuildTarget
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.preloading.ClassCondition
 import org.jetbrains.kotlin.utils.KotlinPaths
@@ -93,11 +95,6 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
         LOG.debug("==========================================")
         LOG.info("is Kotlin incremental compilation enabled for JVM: ${IncrementalCompilation.isEnabledForJvm()}")
         LOG.info("is Kotlin incremental compilation enabled for JS: ${IncrementalCompilation.isEnabledForJs()}")
-        if (IncrementalCompilation.isEnabledForJs()) {
-            val messageCollector = MessageCollectorAdapter(context, null)
-            messageCollector.report(INFO, "Using experimental incremental compilation for Kotlin/JS")
-        }
-
         LOG.info("is Kotlin compiler daemon enabled: ${isDaemonEnabled()}")
 
         val historyLabel = context.getBuilderParameter("history label")
@@ -142,6 +139,7 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
             }
 
             kotlinContext.cleanupCaches()
+            kotlinContext.reportUnsupportedTargets()
         }
 
         LOG.info("Total Kotlin global compile context initialization time: $time ms")
@@ -251,7 +249,7 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
 
         val changesCollector = ChangesCollector()
         removedClasses.forEach { changesCollector.collectSignature(FqName(it), areSubclassesAffected = true) }
-        val affectedByRemovedClasses = changesCollector.getDirtyFiles(incrementalCaches.values, context.projectDescriptor.dataManager)
+        val affectedByRemovedClasses = changesCollector.getDirtyFiles(incrementalCaches.values, kotlinContext.lookupStorageManager)
 
         fsOperations.markFilesForCurrentRound(affectedByRemovedClasses)
     }
@@ -307,6 +305,9 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
         } catch (e: StopBuildException) {
             LOG.info("Caught exception: $e")
             throw e
+        } catch (e: BuildDataCorruptedException) {
+            LOG.info("Caught exception: $e")
+            throw e
         } catch (e: Throwable) {
             LOG.info("Caught exception: $e")
             MessageCollectorUtil.reportException(messageCollector, e)
@@ -332,14 +333,12 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
         val kotlinContext = context.kotlin
         val kotlinChunk = chunk.toKotlinChunk(context)!!
 
-        if (representativeTarget is KotlinUnsupportedModuleBuildTarget) {
-            val msg = "${representativeTarget.kind} is not yet supported in IDEA internal build system. " +
-                    "Please use Gradle to build ${kotlinChunk.presentableShortName}."
-
-            kotlinContext.testingLogger?.addCustomMessage(msg)
-            messageCollector.report(STRONG_WARNING, msg)
-
-            return NOTHING_DONE
+        if (!kotlinChunk.haveSameCompiler) {
+            messageCollector.report(
+                ERROR,
+                "Cyclically dependent modules ${kotlinChunk.presentableModulesToCompilersList} should have same compiler."
+            )
+            return ABORT
         }
 
         if (!kotlinChunk.isEnabled) {
@@ -401,7 +400,6 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
         val start = System.nanoTime()
         val outputItemCollector = doCompileModuleChunk(
             kotlinChunk,
-            chunk,
             representativeTarget,
             kotlinChunk.compilerArguments,
             context,
@@ -464,15 +462,21 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
 
             for ((target, files) in generatedFiles) {
                 val kotlinModuleBuilderTarget = kotlinContext.targetsBinding[target]!!
-                kotlinModuleBuilderTarget.updateCaches(incrementalCaches[kotlinModuleBuilderTarget]!!, files, changesCollector, environment)
+                kotlinModuleBuilderTarget.updateCaches(
+                    kotlinDirtyFilesHolder,
+                    incrementalCaches[kotlinModuleBuilderTarget]!!,
+                    files,
+                    changesCollector,
+                    environment
+                )
             }
 
-            updateLookupStorage(lookupTracker, dataManager, kotlinDirtyFilesHolder)
+            updateLookupStorage(lookupTracker, kotlinContext.lookupStorageManager, kotlinDirtyFilesHolder)
 
             if (!isChunkRebuilding) {
                 changesCollector.processChangesUsingLookups(
                     kotlinDirtyFilesHolder.allDirtyFiles,
-                    dataManager,
+                    kotlinContext.lookupStorageManager,
                     fsOperations,
                     incrementalCaches.values
                 )
@@ -486,7 +490,6 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
     // todo(1.2.80): introduce KotlinRoundCompileContext, move dirtyFilesHolder, fsOperations, environment to it
     private fun doCompileModuleChunk(
         kotlinChunk: KotlinChunk,
-        chunk: ModuleChunk,
         representativeTarget: KotlinModuleBuildTarget<*>,
         commonArguments: CommonCompilerArguments,
         context: CompileContext,
@@ -508,7 +511,7 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
                 val targetDirtyFiles = dirtyFilesHolder.byTarget[jpsTarget]
 
                 if (cache != null && targetDirtyFiles != null) {
-                    val complementaryFiles = cache.clearComplementaryFilesMapping(
+                    val complementaryFiles = cache.getComplementaryFilesRecursive(
                         targetDirtyFiles.dirty.keys + targetDirtyFiles.removed
                     )
 
@@ -640,51 +643,58 @@ class KotlinBuilder : ModuleLevelBuilder(BuilderCategory.SOURCE_PROCESSOR) {
 
     private fun updateLookupStorage(
         lookupTracker: LookupTracker,
-        dataManager: BuildDataManager,
+        lookupStorageManager: JpsLookupStorageManager,
         dirtyFilesHolder: KotlinDirtySourceFilesHolder
     ) {
         if (lookupTracker !is LookupTrackerImpl)
             throw AssertionError("Lookup tracker is expected to be LookupTrackerImpl, got ${lookupTracker::class.java}")
 
-        dataManager.withLookupStorage { lookupStorage ->
+        lookupStorageManager.withLookupStorage { lookupStorage ->
             lookupStorage.removeLookupsFrom(dirtyFilesHolder.allDirtyFiles.asSequence() + dirtyFilesHolder.allRemovedFilesFiles.asSequence())
             lookupStorage.addAll(lookupTracker.lookups.entrySet(), lookupTracker.pathInterner.values)
         }
     }
 }
 
-private class JpsICReporter : ICReporter {
+private class JpsICReporter : ICReporterBase() {
+    override fun reportCompileIteration(incremental: Boolean, sourceFiles: Collection<File>, exitCode: ExitCode) {
+    }
+
     override fun report(message: () -> String) {
         if (KotlinBuilder.LOG.isDebugEnabled) {
             KotlinBuilder.LOG.debug(message())
         }
     }
+
+    override fun reportVerbose(message: () -> String) {
+        report(message)
+    }
 }
 
 private fun ChangesCollector.processChangesUsingLookups(
     compiledFiles: Set<File>,
-    dataManager: BuildDataManager,
+    lookupStorageManager: JpsLookupStorageManager,
     fsOperations: FSOperationsHelper,
     caches: Iterable<JpsIncrementalCache>
 ) {
     val allCaches = caches.flatMap { it.thisWithDependentCaches }
     val reporter = JpsICReporter()
 
-    reporter.report { "Start processing changes" }
+    reporter.reportVerbose { "Start processing changes" }
 
-    val dirtyFiles = getDirtyFiles(allCaches, dataManager)
+    val dirtyFiles = getDirtyFiles(allCaches, lookupStorageManager)
     fsOperations.markInChunkOrDependents(dirtyFiles.asIterable(), excludeFiles = compiledFiles)
 
-    reporter.report { "End of processing changes" }
+    reporter.reportVerbose { "End of processing changes" }
 }
 
 private fun ChangesCollector.getDirtyFiles(
     caches: Iterable<IncrementalCacheCommon>,
-    dataManager: BuildDataManager
+    lookupStorageManager: JpsLookupStorageManager
 ): Set<File> {
     val reporter = JpsICReporter()
     val (dirtyLookupSymbols, dirtyClassFqNames) = getDirtyData(caches, reporter)
-    val dirtyFilesFromLookups = dataManager.withLookupStorage {
+    val dirtyFilesFromLookups = lookupStorageManager.withLookupStorage {
         mapLookupSymbolsToFiles(it, dirtyLookupSymbols, reporter)
     }
     return dirtyFilesFromLookups + mapClassesFqNamesToFiles(caches, dirtyClassFqNames, reporter)

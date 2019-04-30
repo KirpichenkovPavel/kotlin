@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.renderer
@@ -9,7 +9,6 @@ import org.jetbrains.kotlin.builtins.KotlinBuiltIns
 import org.jetbrains.kotlin.descriptors.*
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationUseSiteTarget
-import org.jetbrains.kotlin.descriptors.annotations.AnnotationWithTarget
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.FqNameUnsafe
 import org.jetbrains.kotlin.name.Name
@@ -186,6 +185,10 @@ interface DescriptorRendererOptions {
     var withoutReturnType: Boolean
     var normalizedVisibilities: Boolean
     var renderDefaultVisibility: Boolean
+    var renderDefaultModality: Boolean
+    var renderConstructorDelegation: Boolean
+    var renderPrimaryConstructorParametersAsProperties: Boolean
+    var actualPropertiesInPrimaryConstructor: Boolean
     var uninferredTypeParameterAsName: Boolean
     var overrideRenderingPolicy: OverrideRenderingPolicy
     var valueParametersHandler: DescriptorRenderer.ValueParametersHandler
@@ -215,6 +218,7 @@ interface DescriptorRendererOptions {
     var alwaysRenderModifiers: Boolean
     var renderConstructorKeyword: Boolean
     var renderUnabbreviatedType: Boolean
+    var renderTypeExpansions: Boolean
     var includeAdditionalModifiers: Boolean
     var parameterNamesInFunctionalTypes: Boolean
     var renderFunctionContracts: Boolean
@@ -268,6 +272,8 @@ enum class DescriptorRendererModifier(val includeByDefault: Boolean) {
     INLINE(true),
     EXPECT(true),
     ACTUAL(true),
+    CONST(true),
+    LATEINIT(true),
     ;
 
     companion object {

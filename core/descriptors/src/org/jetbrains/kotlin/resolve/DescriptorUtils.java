@@ -1,10 +1,12 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve;
 
+import kotlin.collections.CollectionsKt;
+import kotlin.jvm.functions.Function1;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.kotlin.builtins.KotlinBuiltIns;
@@ -30,6 +32,7 @@ import java.util.*;
 import static org.jetbrains.kotlin.builtins.KotlinBuiltIns.isAny;
 import static org.jetbrains.kotlin.builtins.KotlinBuiltIns.isNullableAny;
 import static org.jetbrains.kotlin.descriptors.CallableMemberDescriptor.Kind.*;
+import static org.jetbrains.kotlin.descriptors.Modality.ABSTRACT;
 import static org.jetbrains.kotlin.resolve.descriptorUtil.DescriptorUtilsKt.getBuiltIns;
 
 public class DescriptorUtils {
@@ -331,6 +334,16 @@ public class DescriptorUtils {
         return descriptor instanceof ClassDescriptor && ((ClassDescriptor) descriptor).getKind() == classKind;
     }
 
+    public static boolean hasAbstractMembers(@NotNull ClassDescriptor classDescriptor) {
+        for (DeclarationDescriptor member : getAllDescriptors(classDescriptor.getDefaultType().getMemberScope())) {
+            if (member instanceof CallableMemberDescriptor &&
+                ((CallableMemberDescriptor) member).getModality() == ABSTRACT) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @NotNull
     public static List<ClassDescriptor> getSuperclassDescriptors(@NotNull ClassDescriptor classDescriptor) {
         Collection<KotlinType> superclassTypes = classDescriptor.getTypeConstructor().getSupertypes();
@@ -587,8 +600,7 @@ public class DescriptorUtils {
 
     @Nullable
     public static FunctionDescriptor getFunctionByNameOrNull(@NotNull MemberScope scope, @NotNull Name name) {
-        Collection<SimpleFunctionDescriptor> functions = scope.getContributedFunctions(name, NoLookupLocation.FROM_BACKEND);
-        for (SimpleFunctionDescriptor d : functions) {
+        for (SimpleFunctionDescriptor d : scope.getContributedFunctions(name, NoLookupLocation.FROM_BACKEND)) {
             if (name.equals(d.getOriginal().getName())) {
                 return d;
             }
@@ -599,8 +611,7 @@ public class DescriptorUtils {
 
     @NotNull
     public static PropertyDescriptor getPropertyByName(@NotNull MemberScope scope, @NotNull Name name) {
-        Collection<PropertyDescriptor> properties = scope.getContributedVariables(name, NoLookupLocation.FROM_BACKEND);
-        for (PropertyDescriptor d : properties) {
+        for (PropertyDescriptor d : scope.getContributedVariables(name, NoLookupLocation.FROM_BACKEND)) {
             if (name.equals(d.getOriginal().getName())) {
                 return d;
             }

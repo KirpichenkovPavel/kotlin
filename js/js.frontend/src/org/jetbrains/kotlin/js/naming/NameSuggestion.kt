@@ -29,6 +29,7 @@ import org.jetbrains.kotlin.resolve.calls.util.FakeCallableDescriptorForObject
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameUnsafe
 import org.jetbrains.kotlin.resolve.descriptorUtil.isEnumValueOfMethod
 import java.util.*
+import kotlin.math.abs
 
 /**
  * This class is responsible for generating names for declarations. It does not produce fully-qualified JS name, instead
@@ -40,7 +41,7 @@ import java.util.*
  * [NameSuggestion] supports caching.
  */
 class NameSuggestion {
-    private val cache: MutableMap<DeclarationDescriptor, SuggestedName?> = WeakHashMap()
+    private val cache: MutableMap<DeclarationDescriptor, SuggestedName?> = Collections.synchronizedMap(WeakHashMap())
 
     /**
      * Generates names for declarations. Name consists of the following parts:
@@ -339,8 +340,8 @@ class NameSuggestion {
         }
 
         private fun mangledId(forCalculateId: String): String {
-            val absHashCode = Math.abs(forCalculateId.hashCode())
-            return if (absHashCode != 0) Integer.toString(absHashCode, Character.MAX_RADIX) else ""
+            val absHashCode = abs(forCalculateId.hashCode())
+            return if (absHashCode != 0) absHashCode.toString(Character.MAX_RADIX) else ""
         }
 
         private val DeclarationDescriptorWithVisibility.ownEffectiveVisibility

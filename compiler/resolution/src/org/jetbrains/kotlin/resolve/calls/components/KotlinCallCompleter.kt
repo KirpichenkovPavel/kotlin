@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls.components
@@ -8,6 +8,7 @@ package org.jetbrains.kotlin.resolve.calls.components
 import org.jetbrains.kotlin.descriptors.annotations.AnnotationDescriptor
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
+import org.jetbrains.kotlin.config.LanguageFeature
 import org.jetbrains.kotlin.resolve.calls.inference.NewConstraintSystem
 import org.jetbrains.kotlin.resolve.calls.inference.components.KotlinConstraintSystemCompleter
 import org.jetbrains.kotlin.resolve.calls.inference.components.KotlinConstraintSystemCompleter.ConstraintSystemCompletionMode
@@ -17,14 +18,20 @@ import org.jetbrains.kotlin.resolve.calls.inference.model.VariadicTypeParameterC
 import org.jetbrains.kotlin.resolve.calls.inference.model.VariadicTypeVariableFromCallableDescriptor
 import org.jetbrains.kotlin.resolve.calls.model.*
 import org.jetbrains.kotlin.resolve.calls.tower.forceResolution
+import org.jetbrains.kotlin.resolve.calls.util.isTypeIndex
+import org.jetbrains.kotlin.resolve.calls.util.targetedTypeParameterOfTypeIndex
+import org.jetbrains.kotlin.resolve.calls.util.typeArgumentsAnnotation
+import org.jetbrains.kotlin.resolve.calls.util.typeIndexAnnotation
+import org.jetbrains.kotlin.resolve.constants.IntegerLiteralTypeConstructor
 import org.jetbrains.kotlin.resolve.constants.IntegerValueTypeConstructor
 import org.jetbrains.kotlin.resolve.constants.KClassValue
+import org.jetbrains.kotlin.resolve.descriptorUtil.module
 import org.jetbrains.kotlin.resolve.scopes.receivers.ReceiverValue
-import org.jetbrains.kotlin.types.ErrorUtils
-import org.jetbrains.kotlin.types.KotlinType
-import org.jetbrains.kotlin.types.TypeUtils
-import org.jetbrains.kotlin.types.UnwrappedType
+import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
+import org.jetbrains.kotlin.types.model.TypeSystemInferenceExtensionContext
+import org.jetbrains.kotlin.types.model.isIntegerLiteralTypeConstructor
+import org.jetbrains.kotlin.types.model.typeConstructor
 
 class KotlinCallCompleter(
     private val postponedArgumentsAnalyzer: PostponedArgumentsAnalyzer,
@@ -38,18 +45,23 @@ class KotlinCallCompleter(
         resolutionCallbacks: KotlinResolutionCallbacks
     ): CallResolutionResult {
         val diagnosticHolder = KotlinDiagnosticsHolder.SimpleHolder()
-        if (candidates.isEmpty()) {
-            diagnosticHolder.addDiagnostic(NoneCandidatesCallDiagnostic(factory.kotlinCall))
-        }
-        if (candidates.size > 1) {
-            diagnosticHolder.addDiagnostic(ManyCandidatesCallDiagnostic(factory.kotlinCall, candidates))
+        when {
+            candidates.isEmpty() -> diagnosticHolder.addDiagnostic(NoneCandidatesCallDiagnostic(factory.kotlinCall))
+            candidates.size > 1 -> diagnosticHolder.addDiagnostic(ManyCandidatesCallDiagnostic(factory.kotlinCall, candidates))
         }
 
         val candidate = prepareCandidateForCompletion(factory, candidates, resolutionCallbacks)
-        val completionType = candidate.prepareForCompletion(expectedType, resolutionCallbacks)
+        val returnType = candidate.returnTypeWithSmartCastInfo(resolutionCallbacks)
+
+        candidate.addExpectedTypeConstraint(returnType, expectedType, resolutionCallbacks)
+        candidate.addExpectedTypeFromCastConstraint(returnType, resolutionCallbacks)
 
         return if (resolutionCallbacks.inferenceSession.shouldRunCompletion(candidate))
-            candidate.runCompletion(completionType, diagnosticHolder, resolutionCallbacks)
+            candidate.runCompletion(
+                candidate.computeCompletionMode(expectedType, returnType),
+                diagnosticHolder,
+                resolutionCallbacks
+            )
         else
             candidate.asCallResolutionResult(ConstraintSystemCompletionMode.PARTIAL, diagnosticHolder)
     }
@@ -59,9 +71,13 @@ class KotlinCallCompleter(
         expectedType: UnwrappedType?,
         resolutionCallbacks: KotlinResolutionCallbacks
     ): CallResolutionResult {
-        val diagnosticsHolder = KotlinDiagnosticsHolder.SimpleHolder()
-        for (candidate in candidates) {
-            candidate.prepareForCompletion(expectedType, resolutionCallbacks)
+        val completedCandidates = candidates.map { candidate ->
+            val diagnosticsHolder = KotlinDiagnosticsHolder.SimpleHolder()
+
+            candidate.addExpectedTypeConstraint(
+                candidate.returnTypeWithSmartCastInfo(resolutionCallbacks), expectedType, resolutionCallbacks
+            )
+
             runCompletion(
                 candidate.resolvedCall,
                 ConstraintSystemCompletionMode.FULL,
@@ -70,8 +86,10 @@ class KotlinCallCompleter(
                 resolutionCallbacks,
                 collectAllCandidatesMode = true
             )
+
+            CandidateWithDiagnostics(candidate, diagnosticsHolder.getDiagnostics() + candidate.diagnosticsFromResolutionParts)
         }
-        return AllCandidatesResolutionResult(candidates)
+        return AllCandidatesResolutionResult(completedCandidates)
     }
 
     private fun KotlinResolutionCandidate.runCompletion(
@@ -132,30 +150,82 @@ class KotlinCallCompleter(
         return candidate ?: factory.createErrorCandidate().forceResolution()
     }
 
-    // true if we should complete this call
-    private fun KotlinResolutionCandidate.prepareForCompletion(
+    private fun KotlinResolutionCandidate.returnTypeWithSmartCastInfo(resolutionCallbacks: KotlinResolutionCallbacks): UnwrappedType? {
+        val returnType = resolvedCall.candidateDescriptor.returnType?.unwrap() ?: return null
+        val returnTypeWithSmartCastInfo = computeReturnTypeWithSmartCastInfo(returnType, resolutionCallbacks)
+        return resolvedCall.substitutor.substituteKeepAnnotations(returnTypeWithSmartCastInfo)
+    }
+
+    private fun KotlinResolutionCandidate.addExpectedTypeConstraint(
+        returnType: UnwrappedType?,
         expectedType: UnwrappedType?,
         resolutionCallbacks: KotlinResolutionCallbacks
+    ) {
+        if (returnType == null) return
+        if (expectedType == null || TypeUtils.noExpectedType(expectedType)) return
+
+        // This is needed to avoid multiple mismatch errors as we type check resulting type against expected one later
+        // Plus, it helps with IDE-tests where it's important to have particular diagnostics.
+        // Note that it aligns with the old inference, see CallCompleter.completeResolvedCallAndArguments
+        if (csBuilder.currentStorage().notFixedTypeVariables.isEmpty()) return
+
+        // We don't add expected type constraint for constant expression like "1 + 1" because of type coercion for numbers:
+        // val a: Long = 1 + 1, note that result type of "1 + 1" will be Int and adding constraint with Long will produce type mismatch
+        if (!resolutionCallbacks.isCompileTimeConstant(resolvedCall, expectedType)) {
+            csBuilder.addSubtypeConstraint(returnType, expectedType, ExpectedTypeConstraintPosition(resolvedCall.atom))
+        }
+    }
+
+    private fun KotlinResolutionCandidate.addExpectedTypeFromCastConstraint(
+        returnType: UnwrappedType?,
+        resolutionCallbacks: KotlinResolutionCallbacks
+    ) {
+        if (!callComponents.languageVersionSettings.supportsFeature(LanguageFeature.ExpectedTypeFromCast)) return
+        if (returnType == null) return
+        val expectedType = resolutionCallbacks.getExpectedTypeFromAsExpressionAndRecordItInTrace(resolvedCall) ?: return
+        csBuilder.addSubtypeConstraint(returnType, expectedType, ExpectedTypeConstraintPosition(resolvedCall.atom))
+    }
+
+    private fun KotlinResolutionCandidate.computeCompletionMode(
+        expectedType: UnwrappedType?,
+        currentReturnType: UnwrappedType?
     ): ConstraintSystemCompletionMode {
         addConstraintsForVariadicGenerics(expectedType)
-        if (expectedType != null && TypeUtils.noExpectedType(expectedType)) return ConstraintSystemCompletionMode.FULL
+        // Presence of expected type means that we trying to complete outermost call => completion mode should be full
+        if (expectedType != null) return ConstraintSystemCompletionMode.FULL
 
-        val returnType = resolvedCall.candidateDescriptor.returnType?.unwrap() ?: return ConstraintSystemCompletionMode.PARTIAL
-        val substitutedType: UnwrappedType
-        if (expectedType != null) {
-            val returnTypeWithSmartCastInfo = computeReturnTypeWithSmartCastInfo(returnType, resolutionCallbacks)
-            substitutedType = resolvedCall.substitutor.substituteKeepAnnotations(returnTypeWithSmartCastInfo)
+        // This is questionable as null return type can be only for error call
+        if (currentReturnType == null) return ConstraintSystemCompletionMode.PARTIAL
 
-            if (!resolutionCallbacks.isCompileTimeConstant(resolvedCall, expectedType)) {
-                csBuilder.addSubtypeConstraint(substitutedType, expectedType, ExpectedTypeConstraintPosition(resolvedCall.atom))
-            }
-        } else {
-            substitutedType = resolvedCall.substitutor.substituteKeepAnnotations(returnType)
+        return when {
+            // Consider call foo(bar(x)), if return type of bar is a proper one, then we can complete resolve for bar => full completion mode
+            // Otherwise, we shouldn't complete bar until we process call foo
+            csBuilder.isProperType(currentReturnType) -> ConstraintSystemCompletionMode.FULL
+
+            // Nested call is connected with the outer one through the UPPER constraint (returnType <: expectedOuterType)
+            // This means that there will be no new LOWER constraints =>
+        //   it's possible to complete call now if there are proper LOWER constraints
+            csBuilder.isTypeVariable(currentReturnType) ->
+                if (hasProperNonTrivialLowerConstraints(currentReturnType))
+                    ConstraintSystemCompletionMode.FULL
+                else
+                    ConstraintSystemCompletionMode.PARTIAL
+
+            else -> ConstraintSystemCompletionMode.PARTIAL
         }
-        return if (expectedType != null || csBuilder.isProperType(substitutedType))
-            ConstraintSystemCompletionMode.FULL
-        else
-            ConstraintSystemCompletionMode.PARTIAL
+    }
+
+    private fun KotlinResolutionCandidate.hasProperNonTrivialLowerConstraints(typeVariable: UnwrappedType): Boolean {
+        assert(csBuilder.isTypeVariable(typeVariable)) { "$typeVariable is not a type variable" }
+
+        val context = getSystem() as TypeSystemInferenceExtensionContext
+        val constructor = typeVariable.constructor
+        val variableWithConstraints = csBuilder.currentStorage().notFixedTypeVariables[constructor] ?: return false
+        val constraints = variableWithConstraints.constraints
+        return constraints.isNotEmpty() && constraints.all {
+            !it.type.typeConstructor(context).isIntegerLiteralTypeConstructor(context) &&
+                    it.kind.isLower() && csBuilder.isProperType(it.type)
+        }
     }
 
     private fun KotlinResolutionCandidate.computeReturnTypeWithSmartCastInfo(
@@ -167,12 +237,12 @@ class KotlinCallCompleter(
     }
 
     private fun KotlinResolutionCandidate.addConstraintsForVariadicGenerics(expectedType: UnwrappedType?) {
-        processTypeIndexes()
+        processTypeIndices()
         processExpectedType(expectedType)
     }
 
-    private fun KotlinResolutionCandidate.processTypeIndexes() {
-        for ((parameter, argument) in typeIndexesFromResolvedCall()) {
+    private fun KotlinResolutionCandidate.processTypeIndices() {
+        for ((parameter, argument) in typeIndicesFromResolvedCall()) {
             val typeIndexAnnotation = parameter.type.typeIndexAnnotation()!!
             val type = typeIndexAnnotation.targetedTypeParameterOfTypeIndex() ?: continue
             val typeVariableForAdditionalConstraint = resolvedCall.substitutor.freshVariables.singleOrNull { typeVariable ->
@@ -185,6 +255,7 @@ class KotlinCallCompleter(
                 val indexTypeConstructor = indexType.constructor
                 when {
                     indexTypeConstructor is IntegerValueTypeConstructor -> expectedTypeForIntegerIndex(indexTypeConstructor)
+                    indexTypeConstructor is IntegerLiteralTypeConstructor -> expectedTypeForIntegerIndex(indexTypeConstructor)
                     indexType.isTypeIndex() -> expectedTypeForVariableIndex(indexType)
                     else -> null
                 }
@@ -197,27 +268,18 @@ class KotlinCallCompleter(
         }
     }
 
-    private fun KotlinResolutionCandidate.typeIndexesFromResolvedCall() =
+    private fun KotlinResolutionCandidate.typeIndicesFromResolvedCall() =
         resolvedCall.argumentMappingByOriginal.entries.filter { parameterToArgument ->
             parameterToArgument.key.type.annotations.hasAnnotation(
                 FqName("kotlin.experimental.TypeIndex")
             )
         }
 
-    private fun KotlinType.isTypeIndex() = annotations.hasAnnotation(FqName("kotlin.experimental.TypeIndex"))
-    private fun KotlinType.typeIndexAnnotation() = annotations.findAnnotation(FqName("kotlin.experimental.TypeIndex"))
-    private fun AnnotationDescriptor.targetedTypeParameterOfTypeIndex(): KotlinType? {
-        assert(fqName == FqName("kotlin.experimental.TypeIndex")) { "Should only be called on @TypeIndex annotation" }
-        return allValueArguments.getValue(Name.identifier("targetType")).value.safeAs()
-    }
+    private fun KotlinResolutionCandidate.expectedTypeForIntegerIndex(argument: IntegerValueTypeConstructor) =
+        typeFromReceiverAnnotation(argument.value.toInt())
 
-    private fun AnnotationDescriptor.targetedVariadicParameterOfTypeIndex(): KotlinType? {
-        assert(fqName == FqName("kotlin.experimental.TypeIndex")) { "Should only be called on @TypeIndex annotation" }
-        return allValueArguments.getValue(Name.identifier("variadicParameter")).value.safeAs()
-    }
-
-    private fun KotlinResolutionCandidate.expectedTypeForIntegerIndex(argument: IntegerValueTypeConstructor): KotlinType? =
-        typeIndexArgumentIntegerValue(argument)?.let { typeFromReceiverAnnotation(it) }
+    private fun KotlinResolutionCandidate.expectedTypeForIntegerIndex(argument: IntegerLiteralTypeConstructor) =
+        typeFromReceiverAnnotation(argument.value.toInt())
 
     private fun expectedTypeForVariableIndex(indexType: KotlinType): KotlinType? =
         indexType.typeIndexAnnotation()?.targetedTypeParameterOfTypeIndex()
@@ -225,16 +287,17 @@ class KotlinCallCompleter(
     private fun argumentReceiverType(argument: ResolvedCallArgument): KotlinType? =
         argument.arguments.singleOrNull().safeAs<ExpressionKotlinCallArgument>()?.receiver?.receiverValue?.type
 
-    private fun typeIndexArgumentIntegerValue(argument: IntegerValueTypeConstructor): Int? = argument.getValue().toInt()
-
     private fun KotlinResolutionCandidate.typeArgumentsAnnotationFromReceiver(): AnnotationDescriptor? =
-        resolvedCall.dispatchReceiverArgument?.receiver?.receiverValue?.originalReceiver()
-            ?.type?.annotations?.findAnnotation(FqName("kotlin.experimental.TypeArguments"))
+        resolvedCall.dispatchReceiverArgument?.receiver?.receiverValue
+            ?.originalReceiver()?.type?.typeArgumentsAnnotation()
 
     private fun KotlinResolutionCandidate.typeFromReceiverAnnotation(indexValueArgument: Int): KotlinType? {
         val typeArgsAnnotation = typeArgumentsAnnotationFromReceiver() ?: return null
-        val typesArray = typeArgsAnnotation.allValueArguments.get(Name.identifier("types"))?.value
-        return typesArray.safeAs<ArrayList<KClassValue>>()?.getOrNull(indexValueArgument)?.value
+        val typesArray = typeArgsAnnotation.allValueArguments[Name.identifier("types")]?.value
+        val kClassValueByIndex = typesArray.safeAs<ArrayList<KClassValue>>()?.getOrNull(indexValueArgument)
+        return kClassValueByIndex?.getArgumentType(resolvedCall.candidateDescriptor.module)
+        //return kClassWrapper?.arguments?.singleOrNull()?.type
+//            ?.safeAs<KClassValue>()?.getType(resolvedCall.candidateDescriptor.module)
     }
 
     private fun KotlinResolutionCandidate.processExpectedType(expectedType: UnwrappedType?) {
@@ -244,7 +307,9 @@ class KotlinCallCompleter(
         if (variadicTypeParameter == null || typeArgumentsFromExpectedType == null)
             return
         val extractedTypeArguments = typeArgumentsFromExpectedType.allValueArguments[Name.identifier("types")]?.value
-            ?.safeAs<ArrayList<KClassValue>>()?.map { it.value.unwrap() } ?: return
+            ?.safeAs<ArrayList<KClassValue>>()?.mapNotNull {
+                it.value.safeAs<KClassValue>()?.getType(resolvedCall.candidateDescriptor.module)?.unwrap()
+            } ?: return
         val variadicTypeVariables = resolvedCall.substitutor.freshVariables
             .mapNotNull { variable -> variable as? VariadicTypeVariableFromCallableDescriptor }
             .filter { variable -> variable.originalTypeParameter == variadicTypeParameter }

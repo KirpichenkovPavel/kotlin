@@ -40,6 +40,7 @@ import org.jetbrains.kotlin.resolve.constants.KClassValue
 import org.jetbrains.kotlin.resolve.deprecation.CoroutineCompatibilitySupport
 import org.jetbrains.kotlin.resolve.deprecation.DeprecationLevelValue
 import org.jetbrains.kotlin.resolve.deprecation.DeprecationResolver
+import org.jetbrains.kotlin.resolve.deprecation.DeprecationSettings
 import org.jetbrains.kotlin.resolve.descriptorUtil.annotationClass
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameSafe
 import org.jetbrains.kotlin.resolve.descriptorUtil.fqNameUnsafe
@@ -189,7 +190,10 @@ class ExperimentalUsageChecker(project: Project) : CallChecker {
                 if (descriptor?.fqName == USE_EXPERIMENTAL_FQ_NAME) {
                     val annotationClasses = descriptor.allValueArguments[USE_EXPERIMENTAL_ANNOTATION_CLASS]
                     annotationClasses is ArrayValue && annotationClasses.value.any { annotationClass ->
-                        (annotationClass as? KClassValue)?.value?.constructor?.declarationDescriptor?.fqNameSafe == annotationFqName
+                        annotationClass is KClassValue && annotationClass.value.let { value ->
+                            value is KClassValue.Value.NormalClass &&
+                                    value.classId.asSingleFqName() == annotationFqName && value.arrayDimensions == 0
+                        }
                     }
                 } else false
             }
@@ -213,31 +217,29 @@ class ExperimentalUsageChecker(project: Project) : CallChecker {
             // "-Xuse-experimental" arguments. However, it's not easy to do this. This should be solved in the future with the support of
             // module annotations. For now, we only check deprecations because this is needed to correctly retire unneeded compiler arguments.
             val deprecationResolver =
-                DeprecationResolver(LockBasedStorageManager(), languageVersionSettings, CoroutineCompatibilitySupport.ENABLED)
+                DeprecationResolver(LockBasedStorageManager("ExperimentalUsageChecker"), languageVersionSettings, CoroutineCompatibilitySupport.ENABLED, DeprecationSettings.Default)
 
+            // Returns true if fqName refers to a valid experimental API marker.
             fun checkAnnotation(fqName: String): Boolean {
                 val descriptor = module.resolveClassByFqName(FqName(fqName), NoLookupLocation.FOR_NON_TRACKED_SCOPE)
-                val experimentality = descriptor?.loadExperimentalityForMarkerAnnotation()
-                val message = when {
-                    descriptor == null ->
-                        "Experimental API marker $fqName is unresolved. Please make sure it's present in the module dependencies"
-                    experimentality == null ->
-                        "Class $fqName is not an experimental API marker annotation"
-                    else -> {
-                        for (deprecation in deprecationResolver.getDeprecations(descriptor)) {
-                            val report = when (deprecation.deprecationLevel) {
-                                DeprecationLevelValue.WARNING -> reportWarning
-                                DeprecationLevelValue.ERROR, DeprecationLevelValue.HIDDEN -> reportError
-                            }
-                            report("Experimental API marker $fqName is deprecated" + deprecation.message?.let { ". $it" }.orEmpty())
-                        }
-                        return true
-                    }
+                if (descriptor == null) {
+                    reportWarning("Experimental API marker $fqName is unresolved. Please make sure it's present in the module dependencies")
+                    return false
                 }
 
-                reportError(message)
+                if (descriptor.loadExperimentalityForMarkerAnnotation() == null) {
+                    reportWarning("Class $fqName is not an experimental API marker annotation")
+                    return false
+                }
 
-                return false
+                for (deprecation in deprecationResolver.getDeprecations(descriptor)) {
+                    val report = when (deprecation.deprecationLevel) {
+                        DeprecationLevelValue.WARNING -> reportWarning
+                        DeprecationLevelValue.ERROR, DeprecationLevelValue.HIDDEN -> reportError
+                    }
+                    report("Experimental API marker $fqName is deprecated" + deprecation.message?.let { ". $it" }.orEmpty())
+                }
+                return true
             }
 
             val validExperimental = languageVersionSettings.getFlag(AnalysisFlags.experimental).filter(::checkAnnotation)

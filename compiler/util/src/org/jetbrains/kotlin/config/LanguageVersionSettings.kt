@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.config
@@ -91,6 +91,17 @@ enum class LanguageFeature(
     DslMarkerOnFunctionTypeReceiver(KOTLIN_1_4, kind = BUG_FIX),
     RestrictReturnStatementTarget(KOTLIN_1_4, kind = BUG_FIX),
     NoConstantValueAttributeForNonConstVals(KOTLIN_1_4, kind = BUG_FIX),
+    WarningOnMainUnusedParameter(KOTLIN_1_4),
+    PolymorphicSignature(KOTLIN_1_4),
+    ProhibitConcurrentHashMapContains(KOTLIN_1_4, kind = BUG_FIX),
+    ProhibitTypeParametersForLocalVariables(KOTLIN_1_4, kind = BUG_FIX),
+    ProhibitJvmOverloadsOnConstructorsOfAnnotationClasses(KOTLIN_1_4, kind = BUG_FIX),
+    ProhibitTypeParametersInAnonymousObjects(KOTLIN_1_4, kind = BUG_FIX),
+    ProperInlineFromHigherPlatformDiagnostic(KOTLIN_1_4, kind = BUG_FIX),
+    ProhibitRepeatedUseSiteTargetAnnotations(KOTLIN_1_4, kind = BUG_FIX),
+    ProhibitUseSiteTargetAnnotationsOnSuperTypes(KOTLIN_1_4, kind = BUG_FIX),
+    ProhibitTypeParametersInClassLiteralsInAnnotationArguments(KOTLIN_1_4, kind = BUG_FIX),
+    ProhibitComparisonOfIncompatibleEnums(KOTLIN_1_4, kind = BUG_FIX),
 
     ProperVisibilityForCompanionObjectInstanceField(sinceVersion = null, kind = BUG_FIX),
     // Temporarily disabled, see KT-27084/KT-22379
@@ -114,8 +125,12 @@ enum class LanguageFeature(
 
     SamConversionForKotlinFunctions(sinceVersion = KOTLIN_1_3, defaultState = State.DISABLED),
 
+    // can be used only with NewInference feature
+    NewDataFlowForTryExpressions(sinceVersion = KOTLIN_1_3, defaultState = State.DISABLED),
+
     InlineClasses(sinceVersion = KOTLIN_1_3, defaultState = State.ENABLED_WITH_WARNING, kind = UNSTABLE_FEATURE),
 
+    ContractsOnCallsWithImplicitReceiver(sinceVersion = KOTLIN_1_3, defaultState = State.DISABLED),
     ;
 
     val presentableName: String

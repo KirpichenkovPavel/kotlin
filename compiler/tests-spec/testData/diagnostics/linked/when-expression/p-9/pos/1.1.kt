@@ -1,50 +1,49 @@
 // !CHECK_TYPE
-// !WITH_CLASSES
 
 /*
- KOTLIN DIAGNOSTICS SPEC TEST (POSITIVE)
-
- SECTIONS: when-expression
- PARAGRAPH: 9
- SENTENCE: [1] The type of the resulting expression is the least upper bound of the types of all the entries.
- NUMBER: 1
- DESCRIPTION: 'When' least upper bound of the types check (when exhaustive via else branch).
+ * KOTLIN DIAGNOSTICS SPEC TEST (POSITIVE)
+ *
+ * SPEC VERSION: 0.1-draft
+ * PLACE: when-expression -> paragraph 9 -> sentence 1
+ * NUMBER: 1
+ * DESCRIPTION: 'When' least upper bound of the types check (when exhaustive via else branch).
+ * HELPERS: classes
  */
 
-// CASE DESCRIPTION: Checking correctness type (custom types) in 'when' without bound value.
+// TESTCASE NUMBER: 1
 fun case_1(value_1: Int): String {
     val whenValue = when {
-        value_1 == 0 -> _ClassLevel2()
-        value_1 > 0 && value_1 <= 10 -> _ClassLevel3()
-        value_1 > 10 && value_1 <= 100 -> _ClassLevel4()
-        else -> _ClassLevel5()
+        value_1 == 0 -> ClassLevel2()
+        value_1 > 0 && value_1 <= 10 -> ClassLevel3()
+        value_1 > 10 && value_1 <= 100 -> ClassLevel4()
+        else -> ClassLevel5()
     }
 
-    whenValue checkType { _<_ClassLevel2>() }
-    checkSubtype<_ClassLevel1>(whenValue)
+    whenValue checkType { _<ClassLevel2>() }
+    checkSubtype<ClassLevel1>(whenValue)
 
     return ""
 }
 
-// CASE DESCRIPTION: Checking correctness type (custom types) in 'when' with bound value.
+// TESTCASE NUMBER: 2
 fun case_2(value_1: Int): String {
     val whenValue = when (value_1) {
-        0 -> _ClassLevel2()
-        1 -> _ClassLevel3()
-        2 -> _ClassLevel4()
-        else -> _ClassLevel5()
+        0 -> ClassLevel2()
+        1 -> ClassLevel3()
+        2 -> ClassLevel4()
+        else -> ClassLevel5()
     }
 
-    whenValue checkType { _<_ClassLevel2>() }
-    checkSubtype<_ClassLevel1>(whenValue)
+    whenValue checkType { _<ClassLevel2>() }
+    checkSubtype<ClassLevel1>(whenValue)
 
     return ""
 }
 
 /*
- CASE DESCRIPTION: Checking correctness type (numbers) in 'when' without bound value.
- UNEXPECTED BEHAVIOUR
- ISSUES: KT-25268
+ * TESTCASE NUMBER: 3
+ * UNEXPECTED BEHAVIOUR
+ * ISSUES: KT-25268
  */
 fun case_3(value_1: Int): String {
     val whenValue = when {
@@ -64,9 +63,9 @@ fun case_3(value_1: Int): String {
 }
 
 /*
- CASE DESCRIPTION: Checking correctness type (numbers) in 'when' with bound value.
- UNEXPECTED BEHAVIOUR
- ISSUES: KT-25268
+ * TESTCASE NUMBER: 4
+ * UNEXPECTED BEHAVIOUR
+ * ISSUES: KT-25268
  */
 fun case_4(value_1: Int): String {
     val whenValue = when (value_1) {
@@ -85,7 +84,7 @@ fun case_4(value_1: Int): String {
     return ""
 }
 
-// CASE DESCRIPTION: Checking Any type (implicit cast to any) in 'when' without bound value.
+// TESTCASE NUMBER: 5
 fun case_5(value_1: Int): String {
     val whenValue = when {
         value_1 == 0 -> <!IMPLICIT_CAST_TO_ANY!>10<!>
@@ -100,7 +99,7 @@ fun case_5(value_1: Int): String {
     return ""
 }
 
-// CASE DESCRIPTION: Checking Any type (implicit cast to any) in 'when' with bound value.
+// TESTCASE NUMBER: 6
 fun case_6(value_1: Int): String {
     val whenValue = when (value_1) {
         0 -> <!IMPLICIT_CAST_TO_ANY!>10<!>

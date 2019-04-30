@@ -20,7 +20,6 @@ import com.intellij.openapi.fileTypes.StdFileTypes
 import com.intellij.util.indexing.DataIndexer
 import com.intellij.util.indexing.FileBasedIndex
 import com.intellij.util.indexing.FileContent
-import org.jetbrains.kotlin.load.java.JvmAnnotationNames
 import org.jetbrains.kotlin.load.java.JvmAnnotationNames.*
 import org.jetbrains.kotlin.load.kotlin.header.KotlinClassHeader
 import org.jetbrains.kotlin.metadata.jvm.deserialization.JvmMetadataVersion
@@ -61,12 +60,12 @@ object KotlinJvmMetadataVersionIndex : KotlinMetadataVersionIndexBase<KotlinJvmM
 
         tryBlock(inputData) {
             val classReader = ClassReader(inputData.content)
-            classReader.accept(object : ClassVisitor(Opcodes.ASM6) {
+            classReader.accept(object : ClassVisitor(Opcodes.API_VERSION) {
                 override fun visitAnnotation(desc: String, visible: Boolean): AnnotationVisitor? {
                     if (desc != METADATA_DESC) return null
 
                     annotationPresent = true
-                    return object : AnnotationVisitor(Opcodes.ASM6) {
+                    return object : AnnotationVisitor(Opcodes.API_VERSION) {
                         override fun visit(name: String, value: Any) {
                             when (name) {
                                 METADATA_VERSION_FIELD_NAME -> if (value is IntArray) {
@@ -76,7 +75,7 @@ object KotlinJvmMetadataVersionIndex : KotlinMetadataVersionIndexBase<KotlinJvmM
                                     kind = KotlinClassHeader.Kind.getById(value)
                                 }
                                 METADATA_EXTRA_INT_FIELD_NAME -> if (value is Int) {
-                                    isStrictSemantics = (value and JvmAnnotationNames.METADATA_STRICT_VERSION_SEMANTICS_FLAG) != 0
+                                    isStrictSemantics = (value and METADATA_STRICT_VERSION_SEMANTICS_FLAG) != 0
                                 }
                             }
                         }

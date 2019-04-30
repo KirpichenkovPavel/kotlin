@@ -1,14 +1,15 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.calls.components
 
-import org.jetbrains.kotlin.builtins.getReceiverTypeFromFunctionType
 import org.jetbrains.kotlin.builtins.functions.FunctionClassDescriptor
 import org.jetbrains.kotlin.builtins.getFunctionalClassKind
+import org.jetbrains.kotlin.builtins.getReceiverTypeFromFunctionType
 import org.jetbrains.kotlin.descriptors.*
+import org.jetbrains.kotlin.descriptors.impl.TypeAliasConstructorDescriptor
 import org.jetbrains.kotlin.resolve.calls.components.TypeArgumentsToParametersMapper.TypeArgumentsMapping.NoExplicitArguments
 import org.jetbrains.kotlin.resolve.calls.inference.ConstraintSystemOperation
 import org.jetbrains.kotlin.resolve.calls.inference.components.FreshVariableNewTypeSubstitutor
@@ -21,9 +22,10 @@ import org.jetbrains.kotlin.resolve.calls.tower.InfixCallNoInfixModifier
 import org.jetbrains.kotlin.resolve.calls.tower.InvokeConventionCallNoOperatorModifier
 import org.jetbrains.kotlin.resolve.calls.tower.VisibilityError
 import org.jetbrains.kotlin.types.ErrorUtils
-import org.jetbrains.kotlin.types.typeUtil.contains
+import org.jetbrains.kotlin.types.KotlinType
 import org.jetbrains.kotlin.types.UnwrappedType
 import org.jetbrains.kotlin.types.checker.anySuperTypeConstructor
+import org.jetbrains.kotlin.types.typeUtil.contains
 import org.jetbrains.kotlin.utils.addToStdlib.safeAs
 
 internal object CheckInstantiationOfAbstractClass : ResolutionPart() {
@@ -198,13 +200,42 @@ internal object CreateFreshVariablesSubstitutor : ResolutionPart() {
             csBuilder.registerVariable(freshVariable)
         }
 
+        fun TypeVariableFromCallableDescriptor.addSubtypeConstraint(
+            upperBound: KotlinType,
+            position: DeclaredUpperBoundConstraintPosition
+        ) {
+            csBuilder.addSubtypeConstraint(defaultType, toFreshVariables.safeSubstitute(upperBound.unwrap()), position)
+        }
+
         for (index in typeParameters.indices) {
             val typeParameter = typeParameters[index]
             val freshVariable = freshTypeVariables[index]
             val position = DeclaredUpperBoundConstraintPosition(typeParameter)
 
             for (upperBound in typeParameter.upperBounds) {
-                csBuilder.addSubtypeConstraint(freshVariable.defaultType, toFreshVariables.safeSubstitute(upperBound.unwrap()), position)
+                freshVariable.addSubtypeConstraint(upperBound, position)
+            }
+        }
+
+        if (candidateDescriptor is TypeAliasConstructorDescriptor) {
+            val typeAliasDescriptor = candidateDescriptor.typeAliasDescriptor
+            val originalTypes = typeAliasDescriptor.underlyingType.arguments.map { it.type }
+            val originalTypeParameters = candidateDescriptor.underlyingConstructorDescriptor.typeParameters
+            for (index in typeParameters.indices) {
+                val typeParameter = typeParameters[index]
+                val freshVariable = freshTypeVariables[index]
+                val typeMapping = originalTypes.mapIndexedNotNull { i: Int, kotlinType: KotlinType ->
+                    if (kotlinType == typeParameter.defaultType) i else null
+                }
+                for (originalIndex in typeMapping) {
+                    // there can be null in case we already captured type parameter in outer class (in case of inner classes)
+                    // see test innerClassTypeAliasConstructor.kt
+                    val originalTypeParameter = originalTypeParameters.getOrNull(originalIndex) ?: continue
+                    val position = DeclaredUpperBoundConstraintPosition(originalTypeParameter)
+                    for (upperBound in originalTypeParameter.upperBounds) {
+                        freshVariable.addSubtypeConstraint(upperBound, position)
+                    }
+                }
             }
         }
         return toFreshVariables
@@ -218,6 +249,9 @@ internal object PostponedVariablesInitializerResolutionPart : ResolutionPart() {
             val receiverType = parameter.type.getReceiverTypeFromFunctionType() ?: continue
 
             for (freshVariable in resolvedCall.substitutor.freshVariables) {
+                if (resolvedCall.typeArgumentMappingByOriginal.getTypeArguments(freshVariable.originalTypeParameter) is SimpleTypeArgument)
+                    continue
+
                 if (csBuilder.isPostponedTypeVariable(freshVariable)) continue
                 if (receiverType.contains { it.constructor == freshVariable.originalTypeParameter.typeConstructor }) {
                     csBuilder.markPostponedVariable(freshVariable)
@@ -328,7 +362,7 @@ internal object CheckReceivers : ResolutionPart() {
     override fun KotlinResolutionCandidate.workCount() = 2
 }
 
-internal object CheckArguments : ResolutionPart() {
+internal object CheckArgumentsInParenthesis : ResolutionPart() {
     override fun KotlinResolutionCandidate.process(workIndex: Int) {
         val argument = kotlinCall.argumentsInParenthesis[workIndex]
         resolveKotlinArgument(argument, resolvedCall.argumentToCandidateParameter[argument], isReceiver = false)
@@ -342,6 +376,16 @@ internal object CheckExternalArgument : ResolutionPart() {
         val argument = kotlinCall.externalArgument ?: return
 
         resolveKotlinArgument(argument, resolvedCall.argumentToCandidateParameter[argument], isReceiver = false)
+    }
+}
+
+internal object EagerResolveOfCallableReferences : ResolutionPart() {
+    override fun KotlinResolutionCandidate.process(workIndex: Int) {
+        getSubResolvedAtoms()
+            .filterIsInstance<EagerCallableReferenceAtom>()
+            .forEach {
+                callableReferenceResolver.processCallableReferenceArgument(csBuilder, it, this)
+            }
     }
 }
 

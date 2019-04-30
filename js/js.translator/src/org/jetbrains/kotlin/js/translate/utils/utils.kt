@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.js.translate.utils
@@ -122,9 +122,10 @@ fun <T, S> List<T>.splitToRanges(classifier: (T) -> S): List<Pair<List<T>, S>> {
     return result
 }
 
-fun getReferenceToJsClass(type: KotlinType, context: TranslationContext): JsExpression {
-    val classifierDescriptor = type.constructor.declarationDescriptor
+fun getReferenceToJsClass(type: KotlinType, context: TranslationContext): JsExpression =
+    getReferenceToJsClass(type.constructor.declarationDescriptor, context)
 
+fun getReferenceToJsClass(classifierDescriptor: ClassifierDescriptor?, context: TranslationContext): JsExpression {
     return when (classifierDescriptor) {
         is ClassDescriptor -> {
             ReferenceTranslator.translateAsTypeReference(classifierDescriptor, context)
@@ -135,10 +136,10 @@ fun getReferenceToJsClass(type: KotlinType, context: TranslationContext): JsExpr
             context.usageTracker()?.used(classifierDescriptor)
 
             context.captureTypeIfNeedAndGetCapturedName(classifierDescriptor)
-                    ?: context.getNameForDescriptor(classifierDescriptor).makeRef()
+                ?: context.getNameForDescriptor(classifierDescriptor).makeRef()
         }
         else -> {
-            throw IllegalStateException("Can't get reference for $type")
+            throw IllegalStateException("Can't get reference for $classifierDescriptor")
         }
     }
 }
@@ -237,7 +238,7 @@ fun definePackageAlias(name: String, varName: JsName, tag: String, parentRef: Js
 val PsiElement.finalElement: PsiElement
     get() = when (this) {
         is KtFunctionLiteral -> rBrace ?: this
-        is KtDeclarationWithBody -> (bodyExpression as? KtBlockExpression)?.rBrace ?: bodyExpression ?: this
+        is KtDeclarationWithBody -> bodyBlockExpression?.rBrace ?: bodyExpression ?: this
         is KtLambdaExpression -> bodyExpression?.rBrace ?: this
         else -> this
     }

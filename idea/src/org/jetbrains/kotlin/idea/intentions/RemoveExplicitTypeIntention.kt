@@ -16,6 +16,7 @@
 
 package org.jetbrains.kotlin.idea.intentions
 
+import com.intellij.codeInsight.intention.HighPriorityAction
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.util.TextRange
 import org.jetbrains.kotlin.descriptors.FunctionDescriptor
@@ -30,7 +31,7 @@ import org.jetbrains.kotlin.types.typeUtil.isUnit
 class RemoveExplicitTypeIntention : SelfTargetingRangeIntention<KtCallableDeclaration>(
     KtCallableDeclaration::class.java,
     "Remove explicit type specification"
-) {
+), HighPriorityAction {
 
     override fun applicabilityRange(element: KtCallableDeclaration): TextRange? {
         return getRange(element)
@@ -77,6 +78,7 @@ class RemoveExplicitTypeIntention : SelfTargetingRangeIntention<KtCallableDeclar
             if (initializer == null) return true
             if (initializer !is KtLambdaExpression && initializer !is KtNamedFunction) return true
             val functionType = element.typeReference?.typeElement as? KtFunctionType ?: return true
+            if (functionType.receiver != null) return false
             if (functionType.parameters.isEmpty()) return true
             val valueParameters = when (initializer) {
                 is KtLambdaExpression -> initializer.valueParameters

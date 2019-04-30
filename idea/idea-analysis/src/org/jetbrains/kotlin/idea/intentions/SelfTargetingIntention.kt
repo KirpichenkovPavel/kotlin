@@ -28,7 +28,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.intellij.psi.util.PsiTreeUtil
 import org.jetbrains.kotlin.idea.inspections.IntentionBasedInspection
-import org.jetbrains.kotlin.psi.CREATEBYPATTERN_MAY_NOT_REFORMAT
+import org.jetbrains.kotlin.psi.CREATE_BY_PATTERN_MAY_NOT_REFORMAT
 import org.jetbrains.kotlin.psi.KtBlockExpression
 import org.jetbrains.kotlin.psi.KtElement
 import org.jetbrains.kotlin.psi.psiUtil.containsInside
@@ -54,8 +54,7 @@ abstract class SelfTargetingIntention<TElement : PsiElement>(
 
     abstract fun applyTo(element: TElement, editor: Editor?)
 
-    private fun getTarget(editor: Editor, file: PsiFile): TElement? {
-        val offset = editor.caretModel.offset
+    fun getTarget(offset: Int, file: PsiFile): TElement? {
         val leaf1 = file.findElementAt(offset)
         val leaf2 = file.findElementAt(offset - 1)
         val commonParent = if (leaf1 != null && leaf2 != null) PsiTreeUtil.findCommonParent(leaf1, leaf2) else null
@@ -81,18 +80,23 @@ abstract class SelfTargetingIntention<TElement : PsiElement>(
         return null
     }
 
+    fun getTarget(editor: Editor, file: PsiFile): TElement? {
+        val offset = editor.caretModel.offset
+        return getTarget(offset, file)
+    }
+
     protected open fun allowCaretInsideElement(element: PsiElement): Boolean =
             element !is KtBlockExpression
 
     final override fun isAvailable(project: Project, editor: Editor, file: PsiFile): Boolean {
         if (ApplicationManager.getApplication().isUnitTestMode) {
-            CREATEBYPATTERN_MAY_NOT_REFORMAT = true
+            CREATE_BY_PATTERN_MAY_NOT_REFORMAT = true
         }
         try {
             return getTarget(editor, file) != null
         }
         finally {
-            CREATEBYPATTERN_MAY_NOT_REFORMAT = false
+            CREATE_BY_PATTERN_MAY_NOT_REFORMAT = false
         }
     }
 

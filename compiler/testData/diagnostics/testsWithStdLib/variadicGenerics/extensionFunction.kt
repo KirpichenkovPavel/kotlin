@@ -8,7 +8,8 @@ class Tuple<Ts...>(vararg values: Ts) {
     fun asValuesList(): List<Any?> = _values.toList()
 }
 
-fun <T, Ts...: T> Tuple<Ts>.asList(): List<T> = asValuesList().map { it as T }
+fun <T, Ts...: T> Tuple<Ts>.asList(): List<T> =
+    asValuesList().map { it as T }
 
 fun test() {
     val tuple = Tuple(42.7, 15)

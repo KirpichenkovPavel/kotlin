@@ -1,4 +1,5 @@
-// IGNORE_BACKEND: JVM_IR, JS_IR, JS, NATIVE
+// IGNORE_BACKEND: JVM_IR
+// TARGET_BACKEND: JVM
 // WITH_REFLECT
 
 import kotlin.reflect.jvm.*
@@ -16,7 +17,7 @@ inline class T(val s: S) {
 
 fun box(): String {
     assertEquals(listOf(String::class.java, Int::class.java, String::class.java), S::foo.parameters.map { it.type.javaType })
-    assertEquals(S::class.java, S::foo.returnType.javaType)
+    assertEquals(String::class.java, S::foo.returnType.javaType)
 
 /*
     assertEquals(listOf(), T::bar.parameters.map { it.type.javaType })

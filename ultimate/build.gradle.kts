@@ -1,6 +1,5 @@
 
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import org.gradle.jvm.tasks.Jar
 
 description = "Kotlin IDEA Ultimate plugin"
 
@@ -15,6 +14,7 @@ evaluationDependsOn(":prepare:idea-plugin")
 val intellijUltimateEnabled : Boolean by rootProject.extra
 
 val springClasspath by configurations.creating
+val ideaPlugin by configurations.creating
 
 dependencies {
     if (intellijUltimateEnabled) {
@@ -22,17 +22,19 @@ dependencies {
     }
 
     compileOnly(project(":kotlin-reflect-api"))
-    compile(project(":kotlin-stdlib"))
+    compile(kotlinStdlib("jdk8"))
     compile(project(":core:descriptors")) { isTransitive = false }
     compile(project(":compiler:psi")) { isTransitive = false }
     compile(project(":core:descriptors.jvm")) { isTransitive = false }
     compile(project(":core:util.runtime")) { isTransitive = false }
     compile(project(":compiler:light-classes")) { isTransitive = false }
+    compile(project(":core:type-system")) { isTransitive = false }
     compile(project(":compiler:frontend")) { isTransitive = false }
+    compile(project(":compiler:frontend.common")) { isTransitive = false }
     compile(project(":compiler:frontend.java")) { isTransitive = false }
     compile(project(":compiler:util")) { isTransitive = false }
     compile(project(":js:js.frontend")) { isTransitive = false }
-    compile(projectClasses(":idea"))
+    compile(project(":idea")) { isTransitive = false }
     compile(project(":idea:idea-jvm")) { isTransitive = false }
     compile(project(":idea:idea-core")) { isTransitive = false }
     compile(project(":idea:ide-common")) { isTransitive = false }
@@ -42,8 +44,8 @@ dependencies {
     compileOnly(intellijCoreDep()) { includeJars("intellij-core") }
 
     if (intellijUltimateEnabled) {
-        compileOnly(intellijUltimatePluginDep("NodeJS"))
-        compileOnly(intellijUltimateDep()) { includeJars("annotations", "trove4j", "openapi", "platform-api", "platform-impl", "java-api", "java-impl", "idea", "util", "jdom") }
+        compileOnly(nodeJSPlugin())
+        compileOnly(intellijUltimateDep()) { includeJars("trove4j", "openapi", "platform-api", "platform-impl", "java-api", "java-impl", "idea", "util", "jdom") }
         compileOnly(intellijUltimatePluginDep("CSS"))
         compileOnly(intellijUltimatePluginDep("DatabaseTools"))
         compileOnly(intellijUltimatePluginDep("JavaEE"))
@@ -75,7 +77,7 @@ dependencies {
     testRuntime(project(":kotlin-native:kotlin-native-utils")) { isTransitive = false }
 
     if (intellijUltimateEnabled) {
-        testCompileOnly(intellijUltimateDep()) { includeJars("platform-api", "platform-impl", "gson", "annotations", "trove4j", "openapi", "idea", "util", "jdom", rootProject = rootProject) }
+        testCompileOnly(intellijUltimateDep()) { includeJars("platform-api", "platform-impl", "gson", "trove4j", "openapi", "idea", "util", "jdom", rootProject = rootProject) }
     }
     testCompile(commonDep("org.jetbrains.kotlinx", "kotlinx-coroutines-core")) { isTransitive = false }
 
@@ -96,7 +98,7 @@ dependencies {
     testRuntime(project(":allopen-ide-plugin")) { isTransitive = false }
     testRuntime(project(":kotlin-allopen-compiler-plugin")) { isTransitive = false }
     testRuntime(project(":kotlin-scripting-idea")) { isTransitive = false }
-    testRuntime(project(":kotlin-scripting-compiler")) { isTransitive = false }
+    testRuntime(project(":kotlin-scripting-compiler-impl")) { isTransitive = false }
     testRuntime(project(":kotlinx-serialization-compiler-plugin")) { isTransitive = false }
     testRuntime(project(":kotlinx-serialization-ide-plugin")) { isTransitive = false }
     testRuntime(project(":plugins:kapt3-idea")) { isTransitive = false }
@@ -105,6 +107,7 @@ dependencies {
     testRuntime(intellijPluginDep("smali"))
 
     if (intellijUltimateEnabled) {
+        testCompile(nodeJSPlugin())
         testCompile(intellijUltimatePluginDep("CSS"))
         testCompile(intellijUltimatePluginDep("DatabaseTools"))
         testCompile(intellijUltimatePluginDep("JavaEE"))
@@ -114,7 +117,6 @@ dependencies {
         testCompile(intellijUltimatePluginDep("uml"))
         testCompile(intellijUltimatePluginDep("JavaScriptLanguage"))
         testCompile(intellijUltimatePluginDep("JavaScriptDebugger"))
-        testCompile(intellijUltimatePluginDep("NodeJS"))
         testCompile(intellijUltimatePluginDep("properties"))
         testCompile(intellijUltimatePluginDep("java-i18n"))
         testCompile(intellijUltimatePluginDep("gradle"))
@@ -136,6 +138,8 @@ dependencies {
     springClasspath(commonDep("org.springframework", "spring-context"))
     springClasspath(commonDep("org.springframework", "spring-tx"))
     springClasspath(commonDep("org.springframework", "spring-web"))
+
+    ideaPlugin(project(":prepare:idea-plugin", configuration = "runtimeJar"))
 }
 
 val preparedResources = File(buildDir, "prepResources")
@@ -173,14 +177,15 @@ val preparePluginXml by task<Copy> {
     }
 }
 
-val communityPluginProject = ":prepare:idea-plugin"
-
-val jar = runtimeJar(task<ShadowJar>("shadowJar")) {
+val jar = runtimeJar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     dependsOn(preparePluginXml)
-    dependsOn("$communityPluginProject:shadowJar")
-    val communityPluginJar = project(communityPluginProject).configurations["runtimeJar"].artifacts.files.singleFile
-    from(zipTree(communityPluginJar), { exclude("META-INF/plugin.xml") })
+    dependsOn(ideaPlugin)
+    
+    from(provider { zipTree(ideaPlugin.singleFile) }) { 
+        exclude("META-INF/plugin.xml") 
+    }
+    
     from(preparedResources, { include("META-INF/plugin.xml") })
     from(mainSourceSet.output)
     archiveName = "kotlin-plugin.jar"

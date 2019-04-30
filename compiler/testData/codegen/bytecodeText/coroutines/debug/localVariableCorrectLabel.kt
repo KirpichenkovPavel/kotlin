@@ -1,6 +1,5 @@
-// LANGUAGE_VERSION: 1.3
-
 import kotlin.sequences.*
+import kotlin.experimental.*
 
 fun main(args: Array<String>) {
     val s = sequence {
@@ -11,7 +10,12 @@ fun main(args: Array<String>) {
     println(s.toList())
 }
 
+@UseExperimental(ExperimentalTypeInference::class)
+@BuilderInference
 suspend fun SequenceScope<Int>.awaitSeq(): Int = 42
 
-// 1 LOCALVARIABLE a I L19 L23 3
-// 1 LINENUMBER 9 L19
+// 1 LOCALVARIABLE a I L17 L.* 3
+// 1 LINENUMBER 8 L17
+// Adding ignore flags below the test since the test relies on line numbers.
+// IGNORE_BACKEND: JVM_IR
+

@@ -1,15 +1,28 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle
 
 import org.jetbrains.plugins.gradle.model.ExternalDependency
+import org.jetbrains.plugins.gradle.model.ModelFactory
 import java.io.File
 import java.io.Serializable
+import java.util.*
 
 typealias KotlinDependency = ExternalDependency
+
+fun KotlinDependency.deepCopy(cache: MutableMap<Any, Any>): KotlinDependency {
+    val cachedValue = cache[this] as? KotlinDependency
+    if (cachedValue != null) {
+        return cachedValue
+    } else {
+        val result = ModelFactory.createCopy(this)
+        cache[this] = result
+        return result
+    }
+}
 
 interface KotlinModule : Serializable {
     val name: String
@@ -55,10 +68,10 @@ interface KotlinCompilationArguments : Serializable {
 
 interface KotlinCompilation : KotlinModule {
     val sourceSets: Collection<KotlinSourceSet>
-    val target: KotlinTarget
     val output: KotlinCompilationOutput
     val arguments: KotlinCompilationArguments
     val dependencyClasspath: List<String>
+    val disambiguationClassifier: String?
 
     companion object {
         const val MAIN_COMPILATION_NAME = "main"
@@ -84,6 +97,7 @@ interface KotlinTargetJar : Serializable {
 
 interface KotlinTarget : Serializable {
     val name: String
+    val presetName: String?
     val disambiguationClassifier: String?
     val platform: KotlinPlatform
     val compilations: Collection<KotlinCompilation>
@@ -102,4 +116,9 @@ interface KotlinMPPGradleModel : Serializable {
     val sourceSets: Map<String, KotlinSourceSet>
     val targets: Collection<KotlinTarget>
     val extraFeatures: ExtraFeatures
+    val kotlinNativeHome: String
+
+    companion object {
+        const val NO_KOTLIN_NATIVE_HOME = ""
+    }
 }

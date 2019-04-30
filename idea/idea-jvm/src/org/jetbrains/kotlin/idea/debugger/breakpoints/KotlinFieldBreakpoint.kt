@@ -101,7 +101,8 @@ class KotlinFieldBreakpoint(
         super.reload()
 
         val property = getProperty(sourcePosition) ?: return
-        setFieldName(property.name!!)
+        val propertyName = property.name ?: return
+        setFieldName(propertyName)
 
         if (property is KtProperty && property.isTopLevel) {
             properties.myClassName = JvmFileClassUtil.getFileClassInfoNoResolve(property.getContainingKtFile()).fileClassFqName.asString()
@@ -360,26 +361,19 @@ class KotlinFieldBreakpoint(
         }
     }
 
+    // BUNCH: 182
     override fun getInvalidIcon(isMuted: Boolean): Icon {
-        return when {
-            isMuted -> AllIcons.Debugger.Db_muted_invalid_field_breakpoint
-            else -> AllIcons.Debugger.Db_invalid_field_breakpoint
-        }
+        return AllIcons.Debugger.Db_invalid_breakpoint
     }
 
     override fun getVerifiedIcon(isMuted: Boolean): Icon {
         return when {
-            isMuted -> AllIcons.Debugger.Db_muted_verified_field_breakpoint
+            isMuted -> AllIcons.Debugger.Db_muted_field_breakpoint
             else -> AllIcons.Debugger.Db_verified_field_breakpoint
         }
     }
 
-    override fun getVerifiedWarningsIcon(isMuted: Boolean): Icon {
-        return when {
-            isMuted -> AllIcons.Debugger.Db_muted_field_warning_breakpoint
-            else -> AllIcons.Debugger.Db_field_warning_breakpoint
-        }
-    }
+    override fun getVerifiedWarningsIcon(isMuted: Boolean): Icon = AllIcons.Debugger.Db_exception_breakpoint
 
     override fun getCategory() = CATEGORY
 

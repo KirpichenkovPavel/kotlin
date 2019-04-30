@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlinx.metadata.test
@@ -12,6 +12,7 @@ import org.jetbrains.org.objectweb.asm.Opcodes
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import java.net.URLClassLoader
+import kotlin.coroutines.CoroutineContext
 import kotlin.reflect.full.primaryConstructor
 
 class MetadataSmokeTest {
@@ -144,4 +145,59 @@ class MetadataSmokeTest {
 
         assertEquals("Hello, world!", result)
     }
+
+    @Test
+    fun jvmInternalName() {
+        class ClassNameReader : KmClassVisitor() {
+            lateinit var className: ClassName
+
+            override fun visit(flags: Flags, name: ClassName) {
+                className = name
+            }
+        }
+
+        class L
+
+        val l = ClassNameReader().run {
+            (KotlinClassMetadata.read(L::class.java.readMetadata()) as KotlinClassMetadata.Class).accept(this)
+            className
+        }
+        assertEquals(".kotlinx/metadata/test/MetadataSmokeTest\$jvmInternalName\$L", l)
+        assertEquals("kotlinx/metadata/test/MetadataSmokeTest\$jvmInternalName\$L", l.jvmInternalName)
+
+        val coroutineContextKey = ClassNameReader().run {
+            (KotlinClassMetadata.read(CoroutineContext.Key::class.java.readMetadata()) as KotlinClassMetadata.Class).accept(this)
+            className
+        }
+        assertEquals("kotlin/coroutines/CoroutineContext.Key", coroutineContextKey)
+        assertEquals("kotlin/coroutines/CoroutineContext\$Key", coroutineContextKey.jvmInternalName)
+    }
+
+    /*
+    // TODO: uncomment after bootstrap compiler has a fix for KT-29790
+    @Test
+    fun lambdaVersionRequirement() {
+        val x: suspend Int.(String, String) -> Unit = { _, _ -> }
+        val annotation = x::class.java.getAnnotation(Metadata::class.java)!!
+        val metadata = KotlinClassMetadata.read(
+            KotlinClassHeader(
+                kind = annotation.kind,
+                metadataVersion = annotation.metadataVersion,
+                bytecodeVersion = annotation.bytecodeVersion,
+                data1 = annotation.data1,
+                data2 = annotation.data2,
+                extraInt = annotation.extraInt,
+                extraString = annotation.extraString,
+                packageName = annotation.packageName
+            )
+        ) as KotlinClassMetadata.SyntheticClass
+        metadata.accept(object : KmLambdaVisitor() {
+            override fun visitFunction(flags: Flags, name: String) =
+                object : KmFunctionVisitor() {
+                    override fun visitVersionRequirement() =
+                        object : KmVersionRequirementVisitor() {}
+                }
+        })
+    }
+    */
 }

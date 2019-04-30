@@ -1,17 +1,18 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 @file:kotlin.jvm.JvmName("ProcessKt")
 package kotlin.system
 
 /**
- * Terminates the currently running Java Virtual Machine. The
- * argument serves as a status code; by convention, a nonzero status
- * code indicates abnormal termination.
+ * Terminates the currently running process.
  *
- * This method never returns normally.
+ * @param status serves as a status code; by convention,
+ * a nonzero status code indicates abnormal termination.
+ *
+ * @return This method never returns normally.
  */
 @kotlin.internal.InlineOnly
 public inline fun exitProcess(status: Int): Nothing {

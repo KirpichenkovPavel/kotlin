@@ -32,7 +32,8 @@ import com.intellij.psi.PsiDocumentManager
 import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBTextField
 import com.intellij.uiDesigner.core.GridLayoutManager
-import kotlinx.coroutines.channels.ConflatedChannel
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.kotlin.idea.actions.internal.benchmark.AbstractCompletionBenchmarkAction.Companion.addBoxWithLabel
@@ -55,7 +56,7 @@ class HighlightingBenchmarkAction : AnAction() {
 
         fun collectFiles(): List<KtFile>? {
 
-            val ktFiles = collectSuitableKotlinFiles(project, { it.getLineCount() >= settings.lines })
+            val ktFiles = collectSuitableKotlinFiles(project) { it.getLineCount() >= settings.lines }
 
             if (ktFiles.size < settings.files) {
                 AbstractCompletionBenchmarkAction.showPopup(project, "Number of attempts > then files in project, ${ktFiles.size}")
@@ -76,19 +77,18 @@ class HighlightingBenchmarkAction : AnAction() {
 
         val finishListener = DaemonFinishListener()
         connection.subscribe(DaemonCodeAnalyzer.DAEMON_EVENT_TOPIC, finishListener)
-        launch(EDT) {
+        GlobalScope.launch(EDT) {
             try {
                 delay(100)
                 ktFiles
-                        .shuffledSequence(random)
-                        .take(settings.files)
-                        .forEach { file ->
-                            results += openFileAndMeasureTimeToHighlight(file, project, finishListener)
-                        }
+                    .shuffledSequence(random)
+                    .take(settings.files)
+                    .forEach { file ->
+                        results += openFileAndMeasureTimeToHighlight(file, project, finishListener)
+                    }
 
                 saveResults(results, project)
-            }
-            finally {
+            } finally {
                 connection.disconnect()
                 finishListener.channel.close()
             }
@@ -98,7 +98,7 @@ class HighlightingBenchmarkAction : AnAction() {
     private data class Settings(val seed: Long, val files: Int, val lines: Int)
 
     private inner class DaemonFinishListener : DaemonCodeAnalyzer.DaemonListener {
-        val channel = ConflatedChannel<String>()
+        val channel = Channel<String>(capacity = Channel.CONFLATED)
 
         override fun daemonFinished() {
             channel.offer(SUCCESS)
@@ -187,10 +187,10 @@ class HighlightingBenchmarkAction : AnAction() {
         val severityRegistrar = SeverityRegistrar.getSeverityRegistrar(project)
 
         val maxSeverity = model.allHighlighters
-                .mapNotNull { highlighter ->
-                    val info = highlighter.errorStripeTooltip as? HighlightInfo ?: return@mapNotNull null
-                    info.severity
-                }.maxWith(Comparator { o1, o2 -> severityRegistrar.compare(o1, o2) })
+            .mapNotNull { highlighter ->
+                val info = highlighter.errorStripeTooltip as? HighlightInfo ?: return@mapNotNull null
+                info.severity
+            }.maxWith(Comparator { o1, o2 -> severityRegistrar.compare(o1, o2) })
         return Result.Success(location, lines, analysisTime, maxSeverity?.myName ?: "clean")
     }
 

@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlin.collections
@@ -13,7 +13,7 @@ import java.util.AbstractCollection
  * @param E the type of elements contained in the collection. The collection is invariant on its element type.
  */
 @SinceKotlin("1.1")
-public abstract class AbstractMutableCollection<E> protected constructor() : MutableCollection<E>, AbstractCollection<E>() {
+public actual abstract class AbstractMutableCollection<E> protected actual constructor() : MutableCollection<E>, AbstractCollection<E>() {
     /**
      * Adds the specified element to the collection.
      *
@@ -23,5 +23,5 @@ public abstract class AbstractMutableCollection<E> protected constructor() : Mut
      * @return `true` if the element has been added, `false` if the collection does not support duplicates
      * and the element is already contained in the collection.
      */
-    abstract override fun add(element: E): Boolean
+    actual abstract override fun add(element: E): Boolean
 }

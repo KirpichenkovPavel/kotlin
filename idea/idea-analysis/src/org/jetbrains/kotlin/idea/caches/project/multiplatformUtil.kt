@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.caches.project
@@ -14,6 +14,7 @@ import com.intellij.openapi.roots.ProjectRootModificationTracker
 import com.intellij.psi.PsiElement
 import com.intellij.psi.util.CachedValueProvider
 import org.jetbrains.kotlin.analyzer.ModuleInfo
+import org.jetbrains.kotlin.analyzer.common.CommonPlatform
 import org.jetbrains.kotlin.caches.resolve.KotlinCacheService
 import org.jetbrains.kotlin.descriptors.ModuleDescriptor
 import org.jetbrains.kotlin.idea.caches.project.SourceType.PRODUCTION
@@ -118,10 +119,10 @@ private fun ModuleSourceInfo.toDescriptor() = KotlinCacheService.getInstance(mod
     .getResolutionFacadeByModuleInfo(this, platform)?.moduleDescriptor
 
 fun PsiElement.getPlatformModuleInfo(desiredPlatform: TargetPlatform): PlatformModuleInfo? {
-    assert(desiredPlatform != TargetPlatform.Common) { "Platform module cannot have Common platform" }
-    val moduleInfo = getModuleInfo() as? ModuleSourceInfo ?: return null
+    assert(desiredPlatform !is CommonPlatform) { "Platform module cannot have Common platform" }
+    val moduleInfo = getNullableModuleInfo() as? ModuleSourceInfo ?: return null
     return when (moduleInfo.platform) {
-        TargetPlatform.Common -> {
+        is CommonPlatform -> {
             val correspondingImplementingModule = moduleInfo.module.implementingModules.map { it.toInfo(moduleInfo.sourceType) }
                 .firstOrNull { it?.platform == desiredPlatform } ?: return null
             PlatformModuleInfo(correspondingImplementingModule, correspondingImplementingModule.expectedBy)

@@ -48,7 +48,7 @@ abstract class AbstractCheckLocalVariablesTableTest : CodegenTestCase() {
             val pathsString = outputFiles.joinToString { it.relativePath }
             assertNotNull("Couldn't find class file for pattern $classFileRegex in: $pathsString", outputFile)
 
-            val actualLocalVariables = readLocalVariable(ClassReader(outputFile!!.asByteArray()), methodName)
+            val actualLocalVariables = readLocalVariable(ClassReader(outputFile.asByteArray()), methodName)
 
             doCompare(wholeFile, files.single().content, actualLocalVariables)
         } catch (e: Throwable) {
@@ -100,14 +100,14 @@ abstract class AbstractCheckLocalVariablesTableTest : CodegenTestCase() {
 
         private fun readLocalVariable(cr: ClassReader, methodName: String): List<LocalVariable> {
 
-            class Visitor : ClassVisitor(Opcodes.ASM5) {
+            class Visitor : ClassVisitor(Opcodes.API_VERSION) {
                 var readVariables: MutableList<LocalVariable> = ArrayList()
 
                 override fun visitMethod(
                     access: Int, name: String, desc: String, signature: String?, exceptions: Array<String>?
                 ): MethodVisitor? {
                     return if (methodName == name + desc) {
-                        object : MethodVisitor(Opcodes.ASM5) {
+                        object : MethodVisitor(Opcodes.API_VERSION) {
                             override fun visitLocalVariable(
                                 name: String, desc: String, signature: String?, start: Label, end: Label, index: Int
                             ) {

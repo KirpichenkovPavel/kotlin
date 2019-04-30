@@ -24,6 +24,7 @@ import org.gradle.api.file.SourceDirectorySet
 import org.gradle.api.plugins.JavaPluginConvention
 import org.gradle.api.tasks.SourceSet
 import org.jetbrains.kotlin.gradle.dsl.kotlinExtension
+import org.jetbrains.kotlin.gradle.logging.kotlinWarn
 import org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompile
 
 abstract class KotlinPlatformPluginBase(protected val platformName: String) : Plugin<Project> {
@@ -45,7 +46,7 @@ const val EXPECTED_BY_CONFIG_NAME = "expectedBy"
 
 const val IMPLEMENT_CONFIG_NAME = "implement"
 const val IMPLEMENT_DEPRECATION_WARNING = "The '$IMPLEMENT_CONFIG_NAME' configuration is deprecated and will be removed. " +
-                                          "Use '$EXPECTED_BY_CONFIG_NAME' instead."
+        "Use '$EXPECTED_BY_CONFIG_NAME' instead."
 
 open class KotlinPlatformImplementationPluginBase(platformName: String) : KotlinPlatformPluginBase(platformName) {
     private val commonProjects = arrayListOf<Project>()
@@ -76,8 +77,7 @@ open class KotlinPlatformImplementationPluginBase(platformName: String) : Kotlin
                     configurationsForCommonModuleDependency(project).forEach { configuration ->
                         configuration.dependencies.add(dep)
                     }
-                }
-                else {
+                } else {
                     throw GradleException("$project '${config.name}' dependency is not a project: $dep")
                 }
             }
@@ -85,11 +85,11 @@ open class KotlinPlatformImplementationPluginBase(platformName: String) : Kotlin
 
         val incrementalMultiplatform = PropertiesProvider(project).incrementalMultiplatform ?: true
         project.afterEvaluate {
-            project.tasks.withType(AbstractKotlinCompile::class.java).all {
-                if (it.incremental && !incrementalMultiplatform) {
-                    project.logger.debug("IC is turned off for task '${it.path}' because multiplatform IC is not enabled")
+            project.tasks.withType(AbstractKotlinCompile::class.java).all { task ->
+                if (task.incremental && !incrementalMultiplatform) {
+                    task.logger.debug("IC is turned off for task '${task.path}' because multiplatform IC is not enabled")
                 }
-                it.incremental = it.incremental && incrementalMultiplatform
+                task.incremental = task.incremental && incrementalMultiplatform
             }
         }
     }
@@ -102,9 +102,10 @@ open class KotlinPlatformImplementationPluginBase(platformName: String) : Kotlin
         commonProject.whenEvaluated {
             if (!commonProject.pluginManager.hasPlugin("kotlin-platform-common")) {
                 throw GradleException(
-                        "Platform project $platformProject has an " +
-                        "'$EXPECTED_BY_CONFIG_NAME'${if (implementConfigurationIsUsed) "/'$IMPLEMENT_CONFIG_NAME'" else ""} " +
-                        "dependency to non-common project $commonProject")
+                    "Platform project $platformProject has an " +
+                            "'$EXPECTED_BY_CONFIG_NAME'${if (implementConfigurationIsUsed) "/'$IMPLEMENT_CONFIG_NAME'" else ""} " +
+                            "dependency to non-common project $commonProject"
+                )
             }
 
             // Since the two projects may add source sets in arbitrary order, and both may do that after the plugin is applied,
@@ -159,13 +160,14 @@ open class KotlinPlatformImplementationPluginBase(platformName: String) : Kotlin
         project.kotlinExtension.sourceSets
 
     protected open fun addCommonSourceSetToPlatformSourceSet(commonSourceSet: Named, platformProject: Project) {
-        platformProject.whenEvaluated { // At the point when the source set in the platform module is created, the task does not exist
-            val platformTask = platformProject.tasks
+        platformProject.whenEvaluated {
+            // At the point when the source set in the platform module is created, the task does not exist
+            val platformTasks = platformProject.tasks
                 .withType(AbstractKotlinCompile::class.java)
-                .singleOrNull { it.sourceSetName == commonSourceSet.name } // TODO use strict check once this code is not run in K/N
+                .filter { it.sourceSetName == commonSourceSet.name } // TODO use strict check once this code is not run in K/N
 
             val commonSources = getKotlinSourceDirectorySetSafe(commonSourceSet)!!
-            if (platformTask != null) {
+            for (platformTask in platformTasks) {
                 platformTask.source(commonSources)
                 platformTask.commonSourceSet += commonSources
             }
@@ -203,8 +205,7 @@ open class KotlinPlatformImplementationPluginBase(platformName: String) : Kotlin
 internal fun <T> Project.whenEvaluated(fn: Project.() -> T) {
     if (state.executed) {
         fn()
-    }
-    else {
+    } else {
         afterEvaluate { it.fn() }
     }
 }
@@ -217,7 +218,7 @@ open class KotlinPlatformAndroidPlugin : KotlinPlatformImplementationPluginBase(
 
     override fun configurationsForCommonModuleDependency(project: Project): List<Configuration> =
         (project.configurations.findByName("api"))?.let(::listOf)
-                ?: super.configurationsForCommonModuleDependency(project) // older Android plugins don't have api/implementation configs
+            ?: super.configurationsForCommonModuleDependency(project) // older Android plugins don't have api/implementation configs
 
     override fun namedSourceSetsContainer(project: Project): NamedDomainObjectContainer<*> =
         (project.extensions.getByName("android") as BaseExtension).sourceSets
@@ -226,7 +227,7 @@ open class KotlinPlatformAndroidPlugin : KotlinPlatformImplementationPluginBase(
         val androidExtension = platformProject.extensions.getByName("android") as BaseExtension
         val androidSourceSet = androidExtension.sourceSets.findByName(commonSourceSet.name) ?: return
         val kotlinSourceSet = androidSourceSet.getConvention(KOTLIN_DSL_NAME) as? KotlinSourceSet
-                ?: return
+            ?: return
         kotlinSourceSet.kotlin.source(getKotlinSourceDirectorySetSafe(commonSourceSet)!!)
     }
 }

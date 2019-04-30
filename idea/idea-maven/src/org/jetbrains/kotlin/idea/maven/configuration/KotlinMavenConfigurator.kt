@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.maven.configuration
@@ -372,7 +372,7 @@ protected constructor(
                 project,
                 "<html>Couldn't configure kotlin-maven plugin automatically.<br/>" +
                         (if (message != null) "$message</br>" else "") +
-                        "See manual installation instructions <a href=\"http://confluence.jetbrains.com/display/Kotlin/Kotlin+Build+Tools#KotlinBuildTools-Maven\">here</a>.</html>",
+                        "See manual installation instructions <a href=\"https://confluence.jetbrains.com/display/Kotlin/Kotlin+Build+Tools#KotlinBuildTools-Maven\">here</a>.</html>",
                 "Configure Kotlin-Maven Plugin"
             )
         }

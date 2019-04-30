@@ -10,21 +10,21 @@ class Tuple<Ts...> (vararg values: Ts) {
 
 fun testUpper() {
     val tuple = Tuple<Int, String>(15, "15")
-    tuple.get(
+    tuple.<!NEW_INFERENCE_NO_INFORMATION_FOR_PARAMETER!>get<!>(
         <!VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS!>2<!>
     )
 }
 
 fun testLower() {
     val tuple = Tuple<Int, String>(15, "15")
-    tuple.get(
+    tuple.<!NEW_INFERENCE_NO_INFORMATION_FOR_PARAMETER!>get<!>(
         <!VARIADIC_TYPE_PARAMETER_INDEX_OUT_OF_BOUNDS!>-1<!>
     )
 }
 
 fun testNonConstantIndex(notAConstant: Int) {
     val tuple = Tuple<Int, String>(15, "15")
-    tuple.get(
+    tuple.<!NEW_INFERENCE_NO_INFORMATION_FOR_PARAMETER!>get<!>(
         <!VARIADIC_TYPE_PARAMETER_NOT_COMPILE_TIME_CONSTANT_INDEX!>notAConstant<!>
     )
 }

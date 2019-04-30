@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package kotlin.random
@@ -75,7 +75,13 @@ private class KotlinRandom(val impl: Random) : java.util.Random() {
         impl.nextBytes(bytes)
     }
 
+    private var seedInitialized: Boolean = false
     override fun setSeed(seed: Long) {
-        throw UnsupportedOperationException("Setting seed is not supported.")
+        if (!seedInitialized) {
+            // ignore seed value from constructor
+            seedInitialized = true
+        } else {
+            throw UnsupportedOperationException("Setting seed is not supported.")
+        }
     }
 }

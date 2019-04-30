@@ -1,66 +1,52 @@
-/*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ /*
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.gradle.plugin.mpp
 
 import groovy.lang.Closure
-import org.gradle.api.Action
-import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.Project
 import org.gradle.api.attributes.AttributeContainer
 import org.gradle.api.file.FileCollection
-import org.gradle.api.file.FileTree
-import org.gradle.api.file.SourceDirectorySet
-import org.gradle.api.tasks.SourceSet
-import org.gradle.api.tasks.SourceSetOutput
 import org.gradle.util.ConfigureUtil
-import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
+import org.jetbrains.kotlin.gradle.dsl.KotlinCommonOptions
+import org.jetbrains.kotlin.gradle.dsl.KotlinCompile
 import org.jetbrains.kotlin.gradle.dsl.kotlinExtension
+import org.jetbrains.kotlin.gradle.dsl.multiplatformExtensionOrNull
 import org.jetbrains.kotlin.gradle.plugin.*
 import org.jetbrains.kotlin.gradle.plugin.sources.defaultSourceSetLanguageSettingsChecker
 import org.jetbrains.kotlin.gradle.plugin.sources.getSourceSetHierarchy
 import org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompile
-import org.jetbrains.kotlin.gradle.tasks.KotlinNativeCompile
 import org.jetbrains.kotlin.gradle.utils.addExtendsFromRelation
 import org.jetbrains.kotlin.gradle.utils.lowerCamelCaseName
-import java.io.File
-import java.lang.IllegalArgumentException
 import java.util.*
 import java.util.concurrent.Callable
 
-internal fun KotlinCompilation.composeName(prefix: String? = null, suffix: String? = null): String {
+internal fun KotlinCompilation<*>.composeName(prefix: String? = null, suffix: String? = null): String {
     val compilationNamePart = compilationName.takeIf { it != KotlinCompilation.MAIN_COMPILATION_NAME }
     val targetNamePart = target.disambiguationClassifier
 
     return lowerCamelCaseName(prefix, targetNamePart, compilationNamePart, suffix)
 }
 
-internal val KotlinCompilation.defaultSourceSetName: String
+internal val KotlinCompilation<*>.defaultSourceSetName: String
     get() = lowerCamelCaseName(target.disambiguationClassifier, compilationName)
 
-internal class DefaultKotlinDependencyHandler(
-    val parent: HasKotlinDependencies,
-    val project: Project
-) : KotlinDependencyHandler {
-    override fun api(dependencyNotation: Any) = addDependency(parent.apiConfigurationName, dependencyNotation)
-
-    override fun implementation(dependencyNotation: Any) = addDependency(parent.implementationConfigurationName, dependencyNotation)
-
-    override fun compileOnly(dependencyNotation: Any) = addDependency(parent.compileOnlyConfigurationName, dependencyNotation)
-
-    override fun runtimeOnly(dependencyNotation: Any) = addDependency(parent.runtimeOnlyConfigurationName, dependencyNotation)
-
-    private fun addDependency(configurationName: String, dependencyNotation: Any) {
-        project.dependencies.add(configurationName, dependencyNotation)
-    }
-}
-
-abstract class AbstractKotlinCompilation(
+abstract class AbstractKotlinCompilation<T : KotlinCommonOptions>(
     target: KotlinTarget,
     override val compilationName: String
-) : KotlinCompilation, HasKotlinDependencies {
+) : KotlinCompilation<T>, HasKotlinDependencies {
+
+    override val kotlinOptions: T
+        get() = compileKotlinTask.kotlinOptions
+
+    override fun kotlinOptions(configure: T.() -> Unit) =
+        configure(kotlinOptions)
+
+    @Suppress("UNCHECKED_CAST")
+    override val compileKotlinTask: KotlinCompile<T>
+        get() = (target.project.tasks.getByName(compileKotlinTaskName) as KotlinCompile<T>)
 
     // Don't declare this property in the constructor to avoid NPE
     // when an overriding property of a subclass is accessed instead.
@@ -72,6 +58,15 @@ abstract class AbstractKotlinCompilation(
 
     override val kotlinSourceSets: MutableSet<KotlinSourceSet> = mutableSetOf()
 
+    override val allKotlinSourceSets: Set<KotlinSourceSet>
+        get() = kotlinSourceSets.flatMapTo(mutableSetOf()) { it.getSourceSetHierarchy() }
+
+    override val defaultSourceSet: KotlinSourceSet
+        get() = target.project.kotlinExtension.sourceSets.getByName(defaultSourceSetName)
+
+    override fun defaultSourceSet(configure: KotlinSourceSet.() -> Unit) =
+        configure(defaultSourceSet)
+
     override val output: KotlinCompilationOutput by lazy {
         DefaultKotlinCompilationOutput(
             target.project,
@@ -79,45 +74,60 @@ abstract class AbstractKotlinCompilation(
     }
 
     open fun addSourcesToCompileTask(sourceSet: KotlinSourceSet, addAsCommonSources: Boolean) {
-        (target.project.tasks.getByName(compileKotlinTaskName) as AbstractKotlinCompile<*>).apply {
+        fun AbstractKotlinCompile<*>.configureAction() {
             source(sourceSet.kotlin)
             sourceFilesExtensions(sourceSet.customSourceFilesExtensions)
             if (addAsCommonSources) {
                 commonSourceSet += sourceSet.kotlin
             }
         }
+
+        // Note! Invocation of withType-all results in preliminary task instantiation.
+        // After fix of this issue the following code should be uncommented:
+//        if (useLazyTaskConfiguration) {
+//            (target.project.tasks.named(compileKotlinTaskName) as TaskProvider<AbstractKotlinCompile<*>>).configure {
+//                it.configureAction()
+//            }
+//        }
+
+        target.project.tasks
+            // To configure a task that may have not yet been created at this point, use 'withType-matching-all`:
+            .withType(AbstractKotlinCompile::class.java)
+            .matching { it.name == compileKotlinTaskName }
+            .all { compileKotlinTask ->
+                compileKotlinTask.configureAction()
+            }
     }
 
     override fun source(sourceSet: KotlinSourceSet) {
         if (kotlinSourceSets.add(sourceSet)) {
-            with(target.project) {
-                whenEvaluated {
-                    sourceSet.getSourceSetHierarchy().forEach { sourceSet ->
-                        val isCommonSource =
-                            CompilationSourceSetUtil.sourceSetsInMultipleCompilations(project)?.contains(sourceSet) ?: false
+            //TODO possibly issue with forced instantiation
+            target.project.whenEvaluated {
+                sourceSet.getSourceSetHierarchy().forEach { sourceSet ->
+                    val isCommonSource =
+                        CompilationSourceSetUtil.sourceSetsInMultipleCompilations(project)?.contains(sourceSet.name) ?: false
 
-                        addSourcesToCompileTask(sourceSet, addAsCommonSources = isCommonSource)
+                    addSourcesToCompileTask(sourceSet, addAsCommonSources = isCommonSource)
 
-                        // Use `forced = false` since `api`, `implementation`, and `compileOnly` may be missing in some cases like
-                        // old Java & Android projects:
-                        addExtendsFromRelation(apiConfigurationName, sourceSet.apiConfigurationName, forced = false)
-                        addExtendsFromRelation(implementationConfigurationName, sourceSet.implementationConfigurationName, forced = false)
-                        addExtendsFromRelation(compileOnlyConfigurationName, sourceSet.compileOnlyConfigurationName, forced = false)
+                    // Use `forced = false` since `api`, `implementation`, and `compileOnly` may be missing in some cases like
+                    // old Java & Android projects:
+                    addExtendsFromRelation(apiConfigurationName, sourceSet.apiConfigurationName, forced = false)
+                    addExtendsFromRelation(implementationConfigurationName, sourceSet.implementationConfigurationName, forced = false)
+                    addExtendsFromRelation(compileOnlyConfigurationName, sourceSet.compileOnlyConfigurationName, forced = false)
 
-                        if (this is KotlinCompilationToRunnableFiles) {
-                            addExtendsFromRelation(runtimeOnlyConfigurationName, sourceSet.runtimeOnlyConfigurationName, forced = false)
-                        }
+                    if (this@AbstractKotlinCompilation is KotlinCompilationToRunnableFiles<*>) {
+                        addExtendsFromRelation(runtimeOnlyConfigurationName, sourceSet.runtimeOnlyConfigurationName, forced = false)
+                    }
 
-                        if (sourceSet.name != defaultSourceSetName) {
-                            kotlinExtension.sourceSets.findByName(defaultSourceSetName)?.let { defaultSourceSet ->
-                                // Temporary solution for checking consistency across source sets participating in a compilation that may
-                                // not be interconnected with the dependsOn relation: check the settings as if the default source set of
-                                // the compilation depends on the one added to the compilation:
-                                defaultSourceSetLanguageSettingsChecker.runAllChecks(
-                                    defaultSourceSet,
-                                    sourceSet
-                                )
-                            }
+                    if (sourceSet.name != defaultSourceSetName) {
+                        kotlinExtension.sourceSets.findByName(defaultSourceSetName)?.let { defaultSourceSet ->
+                            // Temporary solution for checking consistency across source sets participating in a compilation that may
+                            // not be interconnected with the dependsOn relation: check the settings as if the default source set of
+                            // the compilation depends on the one added to the compilation:
+                            defaultSourceSetLanguageSettingsChecker.runAllChecks(
+                                defaultSourceSet,
+                                sourceSet
+                            )
                         }
                     }
                 }
@@ -166,13 +176,10 @@ abstract class AbstractKotlinCompilation(
     override fun toString(): String = "compilation '$compilationName' ($target)"
 }
 
-val KotlinCompilation.allKotlinSourceSets: Set<KotlinSourceSet>
-    get() = kotlinSourceSets.flatMapTo(mutableSetOf()) { it.getSourceSetHierarchy() }
-
-abstract class AbstractKotlinCompilationToRunnableFiles(
+abstract class AbstractKotlinCompilationToRunnableFiles<T : KotlinCommonOptions>(
     target: KotlinTarget,
     name: String
-) : AbstractKotlinCompilation(target, name), KotlinCompilationToRunnableFiles {
+) : AbstractKotlinCompilation<T>(target, name), KotlinCompilationToRunnableFiles<T> {
     override val runtimeDependencyConfigurationName: String
         get() = lowerCamelCaseName(
             target.disambiguationClassifier,
@@ -183,7 +190,7 @@ abstract class AbstractKotlinCompilationToRunnableFiles(
     override lateinit var runtimeDependencyFiles: FileCollection
 }
 
-internal fun KotlinCompilation.disambiguateName(simpleName: String): String {
+internal fun KotlinCompilation<*>.disambiguateName(simpleName: String): String {
     return lowerCamelCaseName(
         target.disambiguationClassifier,
         compilationName.takeIf { it != KotlinCompilation.MAIN_COMPILATION_NAME },
@@ -191,245 +198,28 @@ internal fun KotlinCompilation.disambiguateName(simpleName: String): String {
     )
 }
 
-open class KotlinJvmCompilation(
-    target: KotlinTarget,
-    name: String
-) : AbstractKotlinCompilationToRunnableFiles(target, name), KotlinCompilationWithResources {
-    override val processResourcesTaskName: String
-        get() = disambiguateName("processResources")
-}
-
-class KotlinWithJavaCompilation(
-    target: KotlinWithJavaTarget,
-    name: String
-) : AbstractKotlinCompilationToRunnableFiles(target, name), KotlinCompilationWithResources {
-    lateinit var javaSourceSet: SourceSet
-
-    override val output: KotlinCompilationOutput by lazy { KotlinWithJavaCompilationOutput(this) }
-
-    override val processResourcesTaskName: String
-        get() = javaSourceSet.processResourcesTaskName
-
-    override var runtimeDependencyFiles: FileCollection
-        get() = javaSourceSet.runtimeClasspath
-        set(value) {
-            javaSourceSet.runtimeClasspath = value
-        }
-
-    override val runtimeDependencyConfigurationName: String
-        get() = javaSourceSet.runtimeClasspathConfigurationName
-
-    override val compileDependencyConfigurationName: String
-        get() = javaSourceSet.compileClasspathConfigurationName
-
-    override val runtimeOnlyConfigurationName: String
-        get() = javaSourceSet.runtimeOnlyConfigurationName
-
-    override val implementationConfigurationName: String
-        get() = javaSourceSet.implementationConfigurationName
-
-    override val apiConfigurationName: String
-        get() = javaSourceSet.apiConfigurationName
-
-    override val compileOnlyConfigurationName: String
-        get() = javaSourceSet.compileOnlyConfigurationName
-
-    override val compileAllTaskName: String
-        get() = javaSourceSet.classesTaskName
-
-    override var compileDependencyFiles: FileCollection
-        get() = javaSourceSet.compileClasspath
-        set(value) {
-            javaSourceSet.compileClasspath = value
-        }
-
-    fun source(javaSourceSet: SourceSet) {
-        with(target.project) {
-            afterEvaluate {
-                (tasks.getByName(compileKotlinTaskName) as AbstractKotlinCompile<*>).source(javaSourceSet.java)
-            }
-        }
-    }
-}
-
-class KotlinJvmAndroidCompilation(
-    target: KotlinAndroidTarget,
-    name: String
-) : AbstractKotlinCompilationToRunnableFiles(target, name)
-
-class KotlinJsCompilation(
-    target: KotlinTarget,
-    name: String
-) : AbstractKotlinCompilationToRunnableFiles(target, name)
-
-class KotlinCommonCompilation(
-    target: KotlinTarget,
-    name: String
-) : AbstractKotlinCompilation(target, name)
-
-class KotlinNativeCompilation(
-    override val target: KotlinNativeTarget,
-    name: String
-) : AbstractKotlinCompilation(target, name), KotlinCompilationWithResources {
-
-    private val project: Project
-        get() = target.project
-
-    // A collection containing all source sets used by this compilation
-    // (taking into account dependencies between source sets). Used by both compilation
-    // and linking tasks. Unlike kotlinSourceSets, includes dependency source sets.
-    // TODO: Move into the compilation task when the linking task does klib linking instead of compilation.
-    internal val allSources: MutableSet<SourceDirectorySet> = mutableSetOf()
-
-    // TODO: Move into the compilation task when the linking task does klib linking instead of compilation.
-    internal val commonSources: MutableSet<SourceDirectorySet> = mutableSetOf()
-
-    var isTestCompilation = false
-
-    var friendCompilationName: String? = null
-
-    internal val friendCompilation: KotlinNativeCompilation?
-        get() = friendCompilationName?.let {
-            target.compilations.getByName(it)
-        }
-
-    internal val binaryTasks = mutableMapOf<Pair<NativeOutputKind, NativeBuildType>, KotlinNativeCompile>()
-
-    // Native-specific DSL.
-    var extraOpts = mutableListOf<String>()
-
-    fun extraOpts(vararg values: Any) = extraOpts(values.toList())
-    fun extraOpts(values: List<Any>) {
-        extraOpts.addAll(values.map { it.toString() })
-    }
-
-    var buildTypes = mutableListOf<NativeBuildType>()
-    var outputKinds = mutableListOf<NativeOutputKind>()
-
-    fun outputKind(kind: NativeOutputKind) = outputKinds.add(kind)
-
-    fun outputKinds(vararg kinds: NativeOutputKind) {
-        outputKinds = kinds.toMutableList()
-    }
-
-    fun outputKinds(vararg kinds: String) {
-        outputKinds = kinds.map { NativeOutputKind.valueOf(it.toUpperCase()) }.toMutableList()
-    }
-
-    fun outputKinds(kinds: List<Any>) {
-        outputKinds = kinds.map {
-            when (it) {
-                is NativeOutputKind -> it
-                is String -> NativeOutputKind.valueOf(it.toUpperCase())
-                else -> error("Cannot use $it as an output kind")
-            }
-        }.toMutableList()
-    }
-
-    var entryPoint: String? = null
-    fun entryPoint(value: String) { entryPoint = value }
-
-    // Interop DSL.
-    val cinterops = project.container(DefaultCInteropSettings::class.java) { cinteropName ->
-        DefaultCInteropSettings(project, cinteropName,this)
-    }
-
-    var linkerOpts = mutableListOf<String>()
-
-    fun cinterops(action: NamedDomainObjectContainer<DefaultCInteropSettings>.() -> Unit) = cinterops.action()
-    fun cinterops(action: Closure<Unit>) = cinterops(ConfigureUtil.configureUsing(action))
-    fun cinterops(action: Action<NamedDomainObjectContainer<DefaultCInteropSettings>>) = action.execute(cinterops)
-
-    fun linkerOpts(vararg values: String) = linkerOpts(values.toList())
-    fun linkerOpts(values: List<String>) {
-        linkerOpts.addAll(values)
-    }
-
-    // Task accessors.
-
-    fun findLinkTask(kind: NativeOutputKind, buildType: NativeBuildType): KotlinNativeCompile? = binaryTasks[kind to buildType]
-
-    fun getLinkTask(kind: NativeOutputKind, buildType: NativeBuildType): KotlinNativeCompile =
-        findLinkTask(kind, buildType) ?:
-        throw IllegalArgumentException("Cannot find a link task for the binary kind '$kind' and the build type '$buildType'")
-
-    fun findLinkTask(kind: String, buildType: String) =
-        findLinkTask(NativeOutputKind.valueOf(kind.toUpperCase()), NativeBuildType.valueOf(buildType.toUpperCase()))
-
-    fun getLinkTask(kind: String, buildType: String) =
-        getLinkTask(NativeOutputKind.valueOf(kind.toUpperCase()), NativeBuildType.valueOf(buildType.toUpperCase()))
-
-    fun findBinary(kind: NativeOutputKind, buildType: NativeBuildType): File? = findLinkTask(kind, buildType)?.outputFile?.get()
-
-    fun getBinary(kind: NativeOutputKind, buildType: NativeBuildType): File = getLinkTask(kind, buildType).outputFile.get()
-
-    fun findBinary(kind: String, buildType: String) =
-        findBinary(NativeOutputKind.valueOf(kind.toUpperCase()), NativeBuildType.valueOf(buildType.toUpperCase()))
-
-    fun getBinary(kind: String, buildType: String) =
-        getBinary(NativeOutputKind.valueOf(kind.toUpperCase()), NativeBuildType.valueOf(buildType.toUpperCase()))
-
-    // Naming
-    override val processResourcesTaskName: String
-        get() = disambiguateName("processResources")
-
-    val linkAllTaskName: String
-        get() = lowerCamelCaseName(
-            "link",
-            compilationName.takeIf { it != "main" }.orEmpty(),
-            target.disambiguationClassifier
-        )
-
-    fun linkTaskName(kind: NativeOutputKind, buildType: NativeBuildType): String =
-        lowerCamelCaseName(
-            "link",
-            compilationName.takeIf { it != KotlinCompilation.MAIN_COMPILATION_NAME }.orEmpty(),
-            buildType.name.toLowerCase(),
-            kind.taskNameClassifier,
-            target.disambiguationClassifier
-        )
-
-    fun linkTaskName(kind: String, buildType: String) =
-        linkTaskName(NativeOutputKind.valueOf(kind.toUpperCase()), NativeBuildType.valueOf(buildType.toUpperCase()))
-
-    override val compileDependencyConfigurationName: String
-        get() = lowerCamelCaseName(
-            target.disambiguationClassifier,
-            compilationName.takeIf { it != KotlinCompilation.MAIN_COMPILATION_NAME }.orEmpty(),
-            "compileKlibraries"
-        )
-
-    override val compileAllTaskName: String
-        get() = lowerCamelCaseName(
-            target.disambiguationClassifier,
-            compilationName.takeIf { it != KotlinCompilation.MAIN_COMPILATION_NAME }.orEmpty(),
-            "klibrary"
-        )
-
-    override fun addSourcesToCompileTask(sourceSet: KotlinSourceSet, addAsCommonSources: Boolean) {
-        allSources.add(sourceSet.kotlin)
-        if (addAsCommonSources) {
-            commonSources.add(sourceSet.kotlin)
-        }
-    }
-}
-
 private object CompilationSourceSetUtil {
     // Cache the results per project
-    private val projectSourceSetsInMultipleCompilationsCache = WeakHashMap<Project, Set<KotlinSourceSet>>()
+    private val projectSourceSetsInMultipleCompilationsCache = WeakHashMap<Project, Set<String>>()
 
     fun sourceSetsInMultipleCompilations(project: Project) =
         projectSourceSetsInMultipleCompilationsCache.computeIfAbsent(project) { _ ->
             check(project.state.executed) { "Should only be computed after the project is evaluated" }
 
-            val compilations = (project.kotlinExtension as? KotlinMultiplatformExtension)?.targets?.flatMap { it.compilations }
+            val compilations = project.multiplatformExtensionOrNull?.targets?.flatMap { it.compilations }
                 ?: return@computeIfAbsent null
 
-            compilations
+            val sources = compilations
                 .flatMap { compilation -> compilation.allKotlinSourceSets.map { sourceSet -> compilation to sourceSet } }
                 .groupingBy { (_, sourceSet) -> sourceSet }
                 .eachCount()
-                .filterValues { it > 1 }
-                .keys
+
+            HashSet<String>().apply {
+                for (entry in sources) {
+                    if (entry.value > 1) {
+                        add(entry.key.name)
+                    }
+                }
+            }
         }
 }

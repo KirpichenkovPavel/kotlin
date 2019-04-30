@@ -38,7 +38,8 @@ open class OverloadingConflictResolver<C : Any>(
     private val createEmptyConstraintSystem: () -> SimpleConstraintSystem,
     private val createFlatSignature: (C) -> FlatSignature<C>,
     private val getVariableCandidates: (C) -> C?, // for variable WithInvoke
-    private val isFromSources: (CallableDescriptor) -> Boolean
+    private val isFromSources: (CallableDescriptor) -> Boolean,
+    private val hasSAMConversion: ((C) -> Boolean)?
 ) {
 
     private val resolvedCallHashingStrategy = object : TObjectHashingStrategy<C> {
@@ -153,10 +154,17 @@ open class OverloadingConflictResolver<C : Any>(
 
             CheckArgumentTypesMode.CHECK_VALUE_ARGUMENTS ->
                 findMaximallySpecificCall(candidates, discriminateGenerics, isDebuggerContext)
-                        ?: findMaximallySpecificCall(
-                            candidates.filterNotTo(mutableSetOf()) { createFlatSignature(it).isSyntheticMember },
+                    ?: hasSAMConversion?.let { hasConversion ->
+                        findMaximallySpecificCall(
+                            candidates.filterNotTo(mutableSetOf()) { hasConversion(it) },
                             discriminateGenerics, isDebuggerContext
                         )
+                    }
+
+                    ?: findMaximallySpecificCall(
+                        candidates.filterNotTo(mutableSetOf()) { createFlatSignature(it).isSyntheticMember },
+                        discriminateGenerics, isDebuggerContext
+                    )
         }
 
     // null means ambiguity between variables
@@ -208,7 +216,7 @@ open class OverloadingConflictResolver<C : Any>(
             }
         }
         if (result == null) return null
-        if (any { it != result && isNotWorse(it, result!!) }) {
+        if (any { it != result && isNotWorse(it, result) }) {
             return null
         }
         return result
@@ -395,7 +403,8 @@ open class OverloadingConflictResolver<C : Any>(
                 gSignature,
                 SpecificityComparisonWithNumerics,
                 specificityComparator
-            )) {
+            )
+        ) {
             return false
         }
 

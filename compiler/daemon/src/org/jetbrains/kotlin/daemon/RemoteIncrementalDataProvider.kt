@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.daemon
@@ -22,7 +22,7 @@ class RemoteIncrementalDataProvider(val facade: CompilerCallbackServicesFacade, 
         get() = rpcProfiler.withMeasure(this) {
             val result = mutableMapOf<File, TranslationResultValue>()
             facade.incrementalDataProvider_getCompiledPackageParts().forEach {
-                val prev = result.put(File(it.filePath), TranslationResultValue(it.metadata, it.binaryAst))
+                val prev = result.put(File(it.filePath), TranslationResultValue(it.metadata, it.binaryAst, it.inlineData))
                 check(prev == null) { "compiledPackageParts: duplicated entry for file `${it.filePath}`" }
             }
             result

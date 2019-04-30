@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.jps.build
@@ -10,13 +10,15 @@ import org.jetbrains.jps.incremental.CompileContext
 import org.jetbrains.jps.incremental.FSOperations
 import org.jetbrains.jps.incremental.GlobalContextKey
 import org.jetbrains.jps.incremental.fs.CompilationRound
+import org.jetbrains.jps.incremental.messages.BuildMessage
+import org.jetbrains.jps.incremental.messages.CompilerMessage
+import org.jetbrains.kotlin.config.CompilerRunnerConstants
 import org.jetbrains.kotlin.incremental.LookupSymbol
-import org.jetbrains.kotlin.jps.incremental.CacheAttributesDiff
-import org.jetbrains.kotlin.jps.incremental.CacheStatus
-import org.jetbrains.kotlin.jps.incremental.loadDiff
+import org.jetbrains.kotlin.incremental.storage.FileToPathConverter
 import org.jetbrains.kotlin.jps.incremental.*
 import org.jetbrains.kotlin.jps.targets.KotlinTargetsIndex
 import org.jetbrains.kotlin.jps.targets.KotlinTargetsIndexBuilder
+import org.jetbrains.kotlin.jps.targets.KotlinUnsupportedModuleBuildTarget
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -61,11 +63,14 @@ class KotlinCompileContext(val jpsContext: CompileContext) {
 
     val lookupsCacheAttributesManager: CompositeLookupsCacheAttributesManager = makeLookupsCacheAttributesManager()
 
-    val initialLookupsCacheStateDiff: CacheAttributesDiff<*> = loadLookupsCacheStateDiff()
-
     val shouldCheckCacheVersions = System.getProperty(KotlinBuilder.SKIP_CACHE_VERSION_CHECK_PROPERTY) == null
 
     val hasKotlinMarker = HasKotlinMarker(dataManager)
+
+    val fileToPathConverter: FileToPathConverter =
+        JpsFileToPathConverter(jpsContext.projectDescriptor.project)
+
+    val lookupStorageManager = JpsLookupStorageManager(dataManager, fileToPathConverter)
 
     /**
      * Flag to prevent rebuilding twice.
@@ -75,6 +80,12 @@ class KotlinCompileContext(val jpsContext: CompileContext) {
     val rebuildAfterCacheVersionChanged = RebuildAfterCacheVersionChangeMarker(dataManager)
 
     var rebuildingAllKotlin = false
+
+    /**
+     * Note, [loadLookupsCacheStateDiff] should be initialized last as it requires initialized
+     * [targetsIndex], [hasKotlinMarker] and [rebuildAfterCacheVersionChanged] (see [markChunkForRebuildBeforeBuild])
+     */
+    private val initialLookupsCacheStateDiff: CacheAttributesDiff<*> = loadLookupsCacheStateDiff()
 
     private fun makeLookupsCacheAttributesManager(): CompositeLookupsCacheAttributesManager {
         val expectedLookupsCacheComponents = mutableSetOf<String>()
@@ -98,11 +109,19 @@ class KotlinCompileContext(val jpsContext: CompileContext) {
             // try to perform a lookup
             // request rebuild if storage is corrupted
             try {
-                dataManager.withLookupStorage {
+                lookupStorageManager.withLookupStorage {
                     it.get(LookupSymbol("<#NAME#>", "<#SCOPE#>"))
                 }
             } catch (e: Exception) {
-                jpsReportInternalBuilderError(jpsContext, Error("Lookup storage is corrupted, probe failed: ${e.message}", e))
+                // replace to jpsReportInternalBuilderError when IDEA-201297 will be implemented
+                jpsContext.processMessage(
+                    CompilerMessage(
+                        "Kotlin", BuildMessage.Kind.WARNING,
+                        "Incremental caches are corrupted. All Kotlin code will be rebuilt."
+                    )
+                )
+                KotlinBuilder.LOG.info(Error("Lookup storage is corrupted, probe failed: ${e.message}", e))
+
                 markAllKotlinForRebuild("Lookup storage is corrupted")
                 return diff.copy(actual = null)
             }
@@ -172,13 +191,11 @@ class KotlinCompileContext(val jpsContext: CompileContext) {
 
         KotlinBuilder.LOG.info("Rebuilding all Kotlin: $reason")
 
-        val dataManager = jpsContext.projectDescriptor.dataManager
-
         targetsIndex.chunks.forEach {
             markChunkForRebuildBeforeBuild(it)
         }
 
-        dataManager.cleanLookupStorage(KotlinBuilder.LOG)
+        lookupStorageManager.cleanLookupStorage(KotlinBuilder.LOG)
     }
 
     private fun markChunkForRebuildBeforeBuild(chunk: KotlinChunk) {
@@ -206,7 +223,7 @@ class KotlinCompileContext(val jpsContext: CompileContext) {
 
     private fun clearLookupCache() {
         KotlinBuilder.LOG.info("Clearing lookup cache")
-        dataManager.cleanLookupStorage(KotlinBuilder.LOG)
+        lookupStorageManager.cleanLookupStorage(KotlinBuilder.LOG)
         initialLookupsCacheStateDiff.manager.writeVersion()
     }
 
@@ -220,6 +237,7 @@ class KotlinCompileContext(val jpsContext: CompileContext) {
                         "$target caches is cleared as not required anymore: ${target.initialLocalCacheAttributesDiff}"
                     )
                     testingLogger?.invalidOrUnusedCache(null, target, target.initialLocalCacheAttributesDiff)
+                    target.initialLocalCacheAttributesDiff.manager.writeVersion(null)
                     dataManager.getKotlinCache(target)?.clean()
                 }
             }
@@ -237,4 +255,50 @@ class KotlinCompileContext(val jpsContext: CompileContext) {
         return targetsIndex.chunksByJpsRepresentativeTarget[rawRepresentativeTarget]
             ?: error("Kotlin binding for chunk $this is not loaded at build start")
     }
+
+    fun reportUnsupportedTargets() {
+        // group all KotlinUnsupportedModuleBuildTarget by kind
+        // only representativeTarget will be added
+        val byKind = mutableMapOf<String?, MutableList<KotlinUnsupportedModuleBuildTarget>>()
+
+        targetsIndex.chunks.forEach {
+            val target = it.representativeTarget
+            if (target is KotlinUnsupportedModuleBuildTarget) {
+                if (target.sourceFiles.isNotEmpty()) {
+                    byKind.getOrPut(target.kind) { mutableListOf() }.add(target)
+                }
+            }
+        }
+
+        byKind.forEach { (kind, targets) ->
+            targets.sortBy { it.module.name }
+            val chunkNames = targets.map { it.chunk.presentableShortName }
+            val presentableChunksListString = chunkNames.joinToReadableString()
+
+            val msg =
+                if (kind == null) {
+                    "$presentableChunksListString is not yet supported in IDEA internal build system. " +
+                            "Please use Gradle to build them (enable 'Delegate IDE build/run actions to Gradle' in Settings)."
+                } else {
+                    "$kind is not yet supported in IDEA internal build system. " +
+                            "Please use Gradle to build $presentableChunksListString (enable 'Delegate IDE build/run actions to Gradle' in Settings)."
+                }
+
+            testingLogger?.addCustomMessage(msg)
+            jpsContext.processMessage(
+                CompilerMessage(
+                    CompilerRunnerConstants.KOTLIN_COMPILER_NAME,
+                    BuildMessage.Kind.WARNING,
+                    msg
+                )
+            )
+        }
+    }
+}
+
+fun List<String>.joinToReadableString(): String = when {
+    size > 5 -> take(5).joinToString() + " and ${size - 5} more"
+    size > 1 -> dropLast(1).joinToString() + " and ${last()}"
+    size == 1 -> single()
+    else -> ""
 }

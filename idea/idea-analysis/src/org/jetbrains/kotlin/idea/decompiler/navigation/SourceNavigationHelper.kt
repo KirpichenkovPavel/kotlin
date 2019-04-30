@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2017 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2017 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.idea.decompiler.navigation
@@ -18,6 +18,7 @@ import com.intellij.psi.stubs.StringStubIndexExtension
 import com.intellij.util.containers.ContainerUtil
 import gnu.trove.THashSet
 import org.jetbrains.annotations.TestOnly
+import org.jetbrains.kotlin.analyzer.common.CommonPlatform
 import org.jetbrains.kotlin.descriptors.CallableDescriptor
 import org.jetbrains.kotlin.idea.caches.project.BinaryModuleInfo
 import org.jetbrains.kotlin.idea.caches.project.getBinaryLibrariesModuleInfos
@@ -29,11 +30,11 @@ import org.jetbrains.kotlin.idea.stubindex.KotlinTopLevelFunctionFqnNameIndex
 import org.jetbrains.kotlin.idea.stubindex.KotlinTopLevelPropertyFqnNameIndex
 import org.jetbrains.kotlin.idea.stubindex.KotlinTopLevelTypeAliasFqNameIndex
 import org.jetbrains.kotlin.idea.util.ProjectRootsUtil
+import org.jetbrains.kotlin.idea.util.isExpectDeclaration
 import org.jetbrains.kotlin.lexer.KtTokens
 import org.jetbrains.kotlin.name.Name
 import org.jetbrains.kotlin.psi.*
 import org.jetbrains.kotlin.psi.debugText.getDebugText
-import org.jetbrains.kotlin.resolve.TargetPlatform
 import org.jetbrains.kotlin.utils.addToStdlib.firstNotNullResult
 
 object SourceNavigationHelper {
@@ -74,10 +75,10 @@ object SourceNavigationHelper {
 
     private fun BinaryModuleInfo.associatedCommonLibraries(): List<BinaryModuleInfo> {
         val platform = platform
-        if (platform == null || platform == TargetPlatform.Common) return emptyList()
+        if (platform == null || platform is CommonPlatform) return emptyList()
 
         return dependencies().filterIsInstance<BinaryModuleInfo>().filter {
-            it.platform == TargetPlatform.Common
+            it.platform is CommonPlatform
         }
     }
 
@@ -189,8 +190,8 @@ object SourceNavigationHelper {
         index: StringStubIndexExtension<T>
     ): T? {
         val classFqName = entity.fqName ?: return null
-        return targetScopes(entity, navigationKind).firstNotNullResult {
-            index.get(classFqName.asString(), entity.project, it).firstOrNull()
+        return targetScopes(entity, navigationKind).firstNotNullResult { scope ->
+            index.get(classFqName.asString(), entity.project, scope).sortedBy { it.isExpectDeclaration() }.firstOrNull()
         }
     }
 
@@ -211,7 +212,7 @@ object SourceNavigationHelper {
         }
 
         return scopes.flatMap { scope ->
-            index.get(declaration.fqName!!.asString(), declaration.project, scope)
+            index.get(declaration.fqName!!.asString(), declaration.project, scope).sortedBy { it.isExpectDeclaration() }
         }
     }
 

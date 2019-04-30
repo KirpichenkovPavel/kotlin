@@ -77,11 +77,21 @@ import java.util.*;
 import static org.jetbrains.kotlin.cli.common.ExitCode.COMPILATION_ERROR;
 import static org.jetbrains.kotlin.cli.common.ExitCode.OK;
 import static org.jetbrains.kotlin.cli.common.UtilsKt.checkKotlinPackageUsage;
+import static org.jetbrains.kotlin.cli.common.UtilsKt.getLibraryFromHome;
 import static org.jetbrains.kotlin.cli.common.messages.CompilerMessageSeverity.*;
 
 public class K2JSCompiler extends CLICompiler<K2JSCompilerArguments> {
     private static final Map<String, ModuleKind> moduleKindMap = new HashMap<>();
     private static final Map<String, SourceMapSourceEmbedding> sourceMapContentEmbeddingMap = new LinkedHashMap<>();
+
+    private K2JsIrCompiler irCompiler = null;
+
+    @NotNull
+    private K2JsIrCompiler getIrCompiler() {
+        if (irCompiler == null)
+            irCompiler = new K2JsIrCompiler();
+        return irCompiler;
+    }
 
     static {
         moduleKindMap.put(K2JsArgumentConstants.MODULE_PLAIN, ModuleKind.PLAIN);
@@ -142,7 +152,7 @@ public class K2JSCompiler extends CLICompiler<K2JSCompilerArguments> {
                 }
                 else {
                     TranslationResultValue translatedValue = compiledParts.get(allSources[i]);
-                    translationUnits.add(new TranslationUnit.BinaryAst(translatedValue.getBinaryAst()));
+                    translationUnits.add(new TranslationUnit.BinaryAst(translatedValue.getBinaryAst(), translatedValue.getInlineData()));
                 }
             }
             return translator.translateUnits(reporter, translationUnits, mainCallParameters, jsAnalysisResult);
@@ -161,6 +171,10 @@ public class K2JSCompiler extends CLICompiler<K2JSCompilerArguments> {
             @Nullable KotlinPaths paths
     ) {
         MessageCollector messageCollector = configuration.getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY);
+
+        if (arguments.getIrBackend()) {
+            return getIrCompiler().doExecute(arguments, configuration, rootDisposable, paths);
+        }
 
         if (arguments.getFreeArgs().isEmpty() && !IncrementalCompilation.isEnabledForJs()) {
             if (arguments.getVersion()) {
@@ -361,10 +375,15 @@ public class K2JSCompiler extends CLICompiler<K2JSCompilerArguments> {
             @NotNull CompilerConfiguration configuration, @NotNull K2JSCompilerArguments arguments,
             @NotNull Services services
     ) {
+        if (arguments.getIrBackend()) {
+            getIrCompiler().setupPlatformSpecificArgumentsAndServices(configuration, arguments, services);
+            return;
+        }
+
         MessageCollector messageCollector = configuration.getNotNull(CLIConfigurationKeys.MESSAGE_COLLECTOR_KEY);
 
         if (arguments.getTarget() != null) {
-            assert arguments.getTarget() == "v5" : "Unsupported ECMA version: " + arguments.getTarget();
+            assert "v5".equals(arguments.getTarget()) : "Unsupported ECMA version: " + arguments.getTarget();
         }
         configuration.put(JSConfigurationKeys.TARGET, EcmaVersion.defaultVersion());
 

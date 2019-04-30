@@ -1,16 +1,15 @@
 // !DIAGNOSTICS: -UNUSED_VALUE -ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE
 
 /*
- KOTLIN DIAGNOSTICS SPEC TEST (NEGATIVE)
-
- SECTIONS: when-expression
- PARAGRAPH: 7
- SENTENCE: [5] Any other expression.
- NUMBER: 1
- DESCRIPTION: 'When' with bound value and non-expressions in 'when condition'.
+ * KOTLIN DIAGNOSTICS SPEC TEST (NEGATIVE)
+ *
+ * SPEC VERSION: 0.1-draft
+ * PLACE: when-expression -> paragraph 7 -> sentence 5
+ * NUMBER: 1
+ * DESCRIPTION: 'When' with bound value and non-expressions in 'when condition'.
  */
 
-// CASE DESCRIPTION: 'When' with cycles in when condition.
+// TESTCASE NUMBER: 1
 fun case_1(value_1: Int, value_2: List<Int>): String {
     when (value_1) {
         <!EXPRESSION_EXPECTED!>while (false) {}<!> -> return ""
@@ -21,7 +20,7 @@ fun case_1(value_1: Int, value_2: List<Int>): String {
     return ""
 }
 
-// CASE DESCRIPTION: 'When' with assignments in when condition.
+// TESTCASE NUMBER: 4
 fun case_4(value_1: Int): String {
     var value_2: Int
     var value_3 = 10

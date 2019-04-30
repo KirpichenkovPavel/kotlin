@@ -20,6 +20,7 @@ import org.jetbrains.kotlin.builtins.*
 import org.jetbrains.kotlin.descriptors.annotations.Annotations
 import org.jetbrains.kotlin.resolve.calls.inference.ConstraintSystemBuilder
 import org.jetbrains.kotlin.resolve.calls.inference.model.ArgumentConstraintPosition
+import org.jetbrains.kotlin.resolve.calls.inference.model.LHSArgumentConstraintPosition
 import org.jetbrains.kotlin.resolve.calls.inference.model.TypeVariableForLambdaReturnType
 import org.jetbrains.kotlin.resolve.calls.model.*
 import org.jetbrains.kotlin.types.UnwrappedType
@@ -33,10 +34,18 @@ fun resolveKtPrimitive(
     diagnosticsHolder: KotlinDiagnosticsHolder,
     isReceiver: Boolean
 ): ResolvedAtom = when (argument) {
-    is SimpleKotlinCallArgument -> checkSimpleArgument(csBuilder, argument, expectedType, diagnosticsHolder, isReceiver)
-    is LambdaKotlinCallArgument -> preprocessLambdaArgument(csBuilder, argument, expectedType)
-    is CallableReferenceKotlinCallArgument -> preprocessCallableReference(csBuilder, argument, expectedType, diagnosticsHolder)
-    is CollectionLiteralKotlinCallArgument -> preprocessCollectionLiteralArgument(argument, expectedType)
+    is SimpleKotlinCallArgument ->
+        checkSimpleArgument(csBuilder, argument, expectedType, diagnosticsHolder, isReceiver)
+
+    is LambdaKotlinCallArgument ->
+        preprocessLambdaArgument(csBuilder, argument, expectedType)
+
+    is CallableReferenceKotlinCallArgument ->
+        preprocessCallableReference(csBuilder, argument, expectedType, diagnosticsHolder)
+
+    is CollectionLiteralKotlinCallArgument ->
+        preprocessCollectionLiteralArgument(argument, expectedType)
+
     else -> unexpectedArgument(argument)
 }
 
@@ -88,7 +97,15 @@ private fun extraLambdaInfo(
     val newTypeVariableUsed = returnType == typeVariable.defaultType
     if (newTypeVariableUsed) csBuilder.registerVariable(typeVariable)
 
-    return ResolvedLambdaAtom(argument, isSuspend, receiverType, parameters, returnType, typeVariable.takeIf { newTypeVariableUsed })
+    return ResolvedLambdaAtom(
+        argument,
+        isSuspend,
+        receiverType,
+        parameters,
+        returnType,
+        typeVariable.takeIf { newTypeVariableUsed },
+        expectedType
+    )
 }
 
 private fun extractLambdaInfoFromFunctionalType(expectedType: UnwrappedType?, argument: LambdaKotlinCallArgument): ResolvedLambdaAtom? {
@@ -105,7 +122,8 @@ private fun extractLambdaInfoFromFunctionalType(expectedType: UnwrappedType?, ar
         receiverType,
         parameters,
         returnType,
-        typeVariableForLambdaReturnType = null
+        typeVariableForLambdaReturnType = null,
+        expectedType = expectedType
     )
 }
 
@@ -136,13 +154,29 @@ private fun preprocessCallableReference(
     expectedType: UnwrappedType?,
     diagnosticsHolder: KotlinDiagnosticsHolder
 ): ResolvedAtom {
-    val result = ResolvedCallableReferenceAtom(argument, expectedType)
+    val result = EagerCallableReferenceAtom(argument, expectedType)
+
     if (expectedType == null) return result
 
     val notCallableTypeConstructor =
-        csBuilder.getProperSuperTypeConstructors(expectedType).firstOrNull { !ReflectionTypes.isPossibleExpectedCallableType(it) }
+        csBuilder.getProperSuperTypeConstructors(expectedType)
+            .firstOrNull { !ReflectionTypes.isPossibleExpectedCallableType(it.requireIs()) }
+
+    argument.lhsResult.safeAs<LHSResult.Type>()?.let {
+        val lhsType = it.unboundDetailedReceiver.stableType
+        if (ReflectionTypes.isNumberedTypeWithOneOrMoreNumber(expectedType)) {
+            val lhsTypeVariable = expectedType.arguments.first().type.unwrap()
+            csBuilder.addSubtypeConstraint(lhsType, lhsTypeVariable, LHSArgumentConstraintPosition(it.qualifier))
+        }
+    }
     if (notCallableTypeConstructor != null) {
-        diagnosticsHolder.addDiagnostic(NotCallableExpectedType(argument, expectedType, notCallableTypeConstructor))
+        diagnosticsHolder.addDiagnostic(
+            NotCallableExpectedType(
+                argument,
+                expectedType,
+                notCallableTypeConstructor.requireIs()
+            )
+        )
     }
     return result
 }
@@ -153,4 +187,9 @@ private fun preprocessCollectionLiteralArgument(
 ): ResolvedAtom {
     // todo add some checks about expected type
     return ResolvedCollectionLiteralAtom(collectionLiteralArgument, expectedType)
+}
+
+internal inline fun <reified T : Any> Any.requireIs(): T {
+    require(this is T)
+    return this
 }

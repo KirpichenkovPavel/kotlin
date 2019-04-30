@@ -18,30 +18,33 @@ package org.jetbrains.kotlin.backend.jvm.lower
 
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
 import org.jetbrains.kotlin.backend.common.IrElementTransformerVoidWithContext
-import org.jetbrains.kotlin.backend.common.descriptors.*
-import org.jetbrains.kotlin.backend.common.ir.createFakeOverrideDescriptor
-import org.jetbrains.kotlin.backend.common.lower.*
+import org.jetbrains.kotlin.backend.common.descriptors.isFunctionOrKFunctionType
+import org.jetbrains.kotlin.backend.common.descriptors.synthesizedName
+import org.jetbrains.kotlin.backend.common.ir.copyTo
+import org.jetbrains.kotlin.backend.common.ir.createImplicitParameterDeclarationWithWrappedDescriptor
+import org.jetbrains.kotlin.backend.common.lower.createIrBuilder
+import org.jetbrains.kotlin.backend.common.lower.irBlock
+import org.jetbrains.kotlin.backend.common.lower.irIfThen
+import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.backend.jvm.JvmBackendContext
-import org.jetbrains.kotlin.backend.jvm.codegen.isInlineCall
+import org.jetbrains.kotlin.backend.jvm.JvmLoweredDeclarationOrigin
+import org.jetbrains.kotlin.backend.jvm.codegen.isInlineFunctionCall
 import org.jetbrains.kotlin.backend.jvm.codegen.isInlineIrExpression
-import org.jetbrains.kotlin.backend.jvm.descriptors.JvmPropertyDescriptorImpl
+import org.jetbrains.kotlin.backend.jvm.codegen.isInlineParameter
 import org.jetbrains.kotlin.codegen.PropertyReferenceCodegen
-import org.jetbrains.kotlin.codegen.binding.CodegenBinding
-import org.jetbrains.kotlin.descriptors.*
-import org.jetbrains.kotlin.descriptors.SourceElement.NO_SOURCE
-import org.jetbrains.kotlin.descriptors.annotations.Annotations
-import org.jetbrains.kotlin.descriptors.impl.*
-import org.jetbrains.kotlin.incremental.components.NoLookupLocation
+import org.jetbrains.kotlin.descriptors.ClassKind
+import org.jetbrains.kotlin.descriptors.Modality
+import org.jetbrains.kotlin.descriptors.Visibilities
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.*
+import org.jetbrains.kotlin.ir.builders.declarations.buildClass
+import org.jetbrains.kotlin.ir.builders.declarations.buildConstructor
+import org.jetbrains.kotlin.ir.builders.declarations.buildField
+import org.jetbrains.kotlin.ir.builders.declarations.buildFun
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.declarations.impl.*
 import org.jetbrains.kotlin.ir.expressions.*
 import org.jetbrains.kotlin.ir.expressions.impl.*
-import org.jetbrains.kotlin.ir.symbols.*
-import org.jetbrains.kotlin.ir.symbols.impl.IrConstructorSymbolImpl
-import org.jetbrains.kotlin.ir.symbols.impl.IrFieldSymbolImpl
-import org.jetbrains.kotlin.ir.symbols.impl.IrSimpleFunctionSymbolImpl
+import org.jetbrains.kotlin.ir.symbols.IrValueParameterSymbol
 import org.jetbrains.kotlin.ir.types.*
 import org.jetbrains.kotlin.ir.types.impl.IrSimpleTypeImpl
 import org.jetbrains.kotlin.ir.types.impl.makeTypeProjection
@@ -50,24 +53,28 @@ import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 import org.jetbrains.kotlin.load.java.JavaVisibilities
 import org.jetbrains.kotlin.name.FqName
 import org.jetbrains.kotlin.name.Name
-import org.jetbrains.kotlin.resolve.DescriptorUtils
-import org.jetbrains.kotlin.resolve.inline.InlineUtil
-import org.jetbrains.kotlin.storage.LockBasedStorageManager
-import org.jetbrains.kotlin.types.KotlinType
-import org.jetbrains.kotlin.types.TypeUtils
 import org.jetbrains.kotlin.types.Variance
-import org.jetbrains.org.objectweb.asm.Opcodes
 import org.jetbrains.org.objectweb.asm.Type
 
 //Hack implementation to support CR java types in lower
 class CrIrType(val type: Type) : IrType {
-    override val annotations = emptyList()
+    override val annotations: List<IrConstructorCall> = emptyList()
+
+    override fun equals(other: Any?): Boolean =
+        other is CrIrType && type == other.type
+
+    override fun hashCode(): Int =
+        type.hashCode()
 }
 
-//Originally was copied from K/Native
-class CallableReferenceLowering(val context: JvmBackendContext) : FileLoweringPass {
+internal val callableReferencePhase = makeIrFilePhase(
+    ::CallableReferenceLowering,
+    name = "CallableReference",
+    description = "Handle callable references"
+)
 
-    object DECLARATION_ORIGIN_FUNCTION_REFERENCE_IMPL : IrDeclarationOriginImpl("FUNCTION_REFERENCE_IMPL")
+//Originally was copied from K/Native
+internal class CallableReferenceLowering(val context: JvmBackendContext) : FileLoweringPass {
 
     private var functionReferenceCount = 0
 
@@ -76,12 +83,12 @@ class CallableReferenceLowering(val context: JvmBackendContext) : FileLoweringPa
     override fun lower(irFile: IrFile) {
         irFile.transformChildrenVoid(object : IrElementTransformerVoidWithContext() {
 
-            override fun visitCall(expression: IrCall): IrExpression {
-                val descriptor = expression.descriptor
-                if (descriptor.isInlineCall(context.state)) {
+            override fun visitFunctionAccess(expression: IrFunctionAccessExpression): IrExpression {
+                val callee = expression.symbol.owner
+                if (callee.isInlineFunctionCall(context)) {
                     //TODO: more wise filtering
-                    descriptor.valueParameters.forEach { valueParameter ->
-                        if (InlineUtil.isInlineParameter(valueParameter)) {
+                    callee.valueParameters.forEach { valueParameter ->
+                        if (valueParameter.isInlineParameter()) {
                             expression.getValueArgument(valueParameter.index)?.let {
                                 if (isInlineIrExpression(it)) {
                                     (it as IrBlock).statements.filterIsInstance<IrFunctionReference>().forEach { reference ->
@@ -96,28 +103,25 @@ class CallableReferenceLowering(val context: JvmBackendContext) : FileLoweringPa
                 val argumentsCount = expression.valueArgumentsCount
                 // Change calls to FunctionN with large N to varargs calls.
                 val newCall = if (argumentsCount > MAX_ARGCOUNT_WITHOUT_VARARG &&
-                    descriptor.containingDeclaration in listOf(
-                        context.builtIns.getFunction(argumentsCount),
-                        context.reflectionTypes.getKFunction(argumentsCount)
-                    )
+                    callee.parentAsClass.defaultType.isFunctionOrKFunction()
                 ) {
                     val vararg = IrVarargImpl(
                         UNDEFINED_OFFSET, UNDEFINED_OFFSET,
                         context.ir.symbols.array.typeWith(),
-                        context.ir.symbols.any.typeWith(),
+                        context.irBuiltIns.anyClass.typeWith(),
                         (0 until argumentsCount).map { i -> expression.getValueArgument(i)!! }
                     )
-                    val invokeFunDescriptor = context.getClass(FqName("kotlin.jvm.functions.FunctionN"))
-                        .getFunction("invoke", listOf(expression.type.toKotlinType()))
-                    val invokeFunSymbol = context.ir.symbols.externalSymbolTable.referenceSimpleFunction(invokeFunDescriptor.original)
+                    val invokeFun = context.ir.symbols.functionN.owner.declarations.single {
+                        it is IrSimpleFunction && it.name.asString() == "invoke"
+                    } as IrSimpleFunction
 
                     IrCallImpl(
                         UNDEFINED_OFFSET, UNDEFINED_OFFSET,
                         expression.type,
-                        invokeFunSymbol, invokeFunDescriptor,
+                        invokeFun.symbol, invokeFun.descriptor,
                         1,
                         expression.origin,
-                        expression.superQualifier?.let { context.ir.symbols.externalSymbolTable.referenceClass(it) }
+                        (expression as? IrCall)?.superQualifier?.let { context.ir.symbols.externalSymbolTable.referenceClass(it) }
                     ).apply {
                         putTypeArgument(0, expression.type)
                         dispatchReceiver = expression.dispatchReceiver
@@ -127,7 +131,7 @@ class CallableReferenceLowering(val context: JvmBackendContext) : FileLoweringPa
                 } else expression
 
                 //TODO: clean
-                return super.visitCall(newCall)
+                return super.visitFunctionAccess(newCall)
             }
 
             override fun visitFunctionReference(expression: IrFunctionReference): IrExpression {
@@ -138,7 +142,8 @@ class CallableReferenceLowering(val context: JvmBackendContext) : FileLoweringPa
                     return expression
                 }
 
-                val loweredFunctionReference = FunctionReferenceBuilder(currentScope!!.scope.scopeOwner, expression).build()
+                val currentDeclarationParent = allScopes.map { it.irElement }.last { it is IrDeclarationParent } as IrDeclarationParent
+                val loweredFunctionReference = FunctionReferenceBuilder(currentDeclarationParent, expression).build()
                 val irBuilder = context.createIrBuilder(currentScope!!.scope.scopeOwnerSymbol, expression.startOffset, expression.endOffset)
                 return irBuilder.irBlock(expression) {
                     +loweredFunctionReference.functionReferenceClass
@@ -157,26 +162,24 @@ class CallableReferenceLowering(val context: JvmBackendContext) : FileLoweringPa
         val functionReferenceConstructor: IrConstructor
     )
 
-    private val kotlinPackageScope = context.builtIns.builtInsPackageScope
-
-    private val continuationClassDescriptor = context.getClass(FqName("kotlin.coroutines.experimental.Continuation"))
-
-    //private val getContinuationSymbol = context.ir.symbols.getContinuation
-
     private inner class FunctionReferenceBuilder(
-        val containingDeclaration: DeclarationDescriptor,
+        val referenceParent: IrDeclarationParent,
         val irFunctionReference: IrFunctionReference
     ) {
 
-        private val functionDescriptor = irFunctionReference.descriptor
-        private val functionParameters = functionDescriptor.explicitParameters
-        private val boundFunctionParameters = irFunctionReference.getArguments().map { it.first }
-        private val unboundFunctionParameters = functionParameters - boundFunctionParameters
+        private val callee = irFunctionReference.symbol.owner
+        private val calleeParameters = callee.explicitParameters
+        private val boundCalleeParameters = irFunctionReference.getArgumentsWithIr().map { it.first }
+        private val unboundCalleeParameters = calleeParameters - boundCalleeParameters
 
-        private lateinit var functionReferenceClassDescriptor: ClassDescriptorImpl
-        private lateinit var functionReferenceClass: IrClassImpl
+        private val typeArgumentsMap = callee.typeParameters.associate { typeParam ->
+            typeParam to irFunctionReference.getTypeArgument(typeParam.index)!!
+        }
+
+
+        private lateinit var functionReferenceClass: IrClass
         private lateinit var functionReferenceThis: IrValueParameterSymbol
-        private lateinit var argumentToPropertiesMap: Map<ParameterDescriptor, IrFieldSymbol>
+        private lateinit var argumentToFieldMap: Map<IrValueParameter, IrField>
 
         private val isLambda = irFunctionReference.origin == IrStatementOrigin.LAMBDA
 
@@ -185,604 +188,394 @@ class CallableReferenceLowering(val context: JvmBackendContext) : FileLoweringPa
         var useVararg: Boolean = false
 
         fun build(): BuiltFunctionReference {
-            val startOffset = irFunctionReference.startOffset
-            val endOffset = irFunctionReference.endOffset
-
-            val returnType = functionDescriptor.returnType!!
-            val superTypes: MutableList<KotlinType> = mutableListOf(
-                functionReferenceOrLambda.descriptor.defaultType
+            val returnType = irFunctionReference.symbol.owner.returnType
+            val functionReferenceClassSuperTypes: MutableList<IrType> = mutableListOf(
+                functionReferenceOrLambda.owner.defaultType // type arguments?
             )
 
-            val numberOfParameters = unboundFunctionParameters.size
+            val numberOfParameters = unboundCalleeParameters.size
             useVararg = (numberOfParameters > MAX_ARGCOUNT_WITHOUT_VARARG)
 
-            val functionClassDescriptor = if (useVararg)
-                context.getClass(FqName("kotlin.jvm.functions.FunctionN"))
+            val functionClassSymbol = if (useVararg)
+                context.ir.symbols.functionN
             else
-                context.getClass(FqName("kotlin.jvm.functions.Function$numberOfParameters"))
-            val functionParameterTypes = unboundFunctionParameters.map { it.type }
+                context.ir.symbols.getJvmFunctionClass(numberOfParameters)
+            val functionClass = functionClassSymbol.owner
+            val functionParameterTypes = unboundCalleeParameters.map { it.type }
             val functionClassTypeParameters = if (useVararg)
                 listOf(returnType)
             else
                 functionParameterTypes + returnType
-            superTypes += functionClassDescriptor.defaultType.replace(functionClassTypeParameters)
+            functionReferenceClassSuperTypes += IrSimpleTypeImpl(
+                functionClassSymbol,
+                hasQuestionMark = false,
+                arguments = functionClassTypeParameters.map { makeTypeProjection(it, Variance.INVARIANT) },
+                annotations = emptyList()
+            )
 
-            var suspendFunctionClassDescriptor: ClassDescriptor? = null
-            var suspendFunctionClassTypeParameters: List<KotlinType>? = null
-            val lastParameterType = unboundFunctionParameters.lastOrNull()?.type
-            if (lastParameterType != null && TypeUtils.getClassDescriptor(lastParameterType) == continuationClassDescriptor) {
+            var suspendFunctionClass: IrClass? = null
+            val lastParameterType = unboundCalleeParameters.lastOrNull()?.type
+            if (lastParameterType is IrSimpleType &&
+                lastParameterType.classOrNull?.owner?.fqNameWhenAvailable?.asString() == "kotlin.coroutines.experimental.Continuation"
+            ) {
                 // If the last parameter is Continuation<> inherit from SuspendFunction.
-                suspendFunctionClassDescriptor = kotlinPackageScope.getContributedClassifier(
-                    Name.identifier("SuspendFunction${numberOfParameters - 1}"), NoLookupLocation.FROM_BACKEND
-                ) as ClassDescriptor
-                suspendFunctionClassTypeParameters = functionParameterTypes.dropLast(1) + lastParameterType.arguments.single().type
-                superTypes += suspendFunctionClassDescriptor.defaultType.replace(suspendFunctionClassTypeParameters)
+                suspendFunctionClass = context.getTopLevelClass(FqName("kotlin.coroutines.SuspendFunction${numberOfParameters - 1}")).owner
+                val suspendFunctionClassTypeParameters = functionParameterTypes.dropLast(1) +
+                        (lastParameterType.arguments.single() as IrTypeProjection).type
+                functionReferenceClassSuperTypes += IrSimpleTypeImpl(
+                    suspendFunctionClass.symbol,
+                    hasQuestionMark = false,
+                    arguments = suspendFunctionClassTypeParameters.map { makeTypeProjection(it, Variance.INVARIANT) },
+                    annotations = emptyList()
+                )
             }
 
-            functionReferenceClassDescriptor = ClassDescriptorImpl(
-                /* containingDeclaration = */ containingDeclaration,
-                /* name                  = */ "${functionDescriptor.name}\$${functionReferenceCount++}".synthesizedName,
-                /* modality              = */ Modality.FINAL,
-                /* kind                  = */ ClassKind.CLASS,
-                /* superTypes            = */ superTypes,
-                /* source                = */ /*TODO*/ (containingDeclaration as? DeclarationDescriptorWithSource)?.source ?: NO_SOURCE,
-                /* isExternal            = */ false,
-                                              LockBasedStorageManager.NO_LOCKS
-            )
-            functionReferenceClass = IrClassImpl(
-                startOffset = startOffset,
-                endOffset = endOffset,
-                origin = DECLARATION_ORIGIN_FUNCTION_REFERENCE_IMPL,
-                descriptor = functionReferenceClassDescriptor
-            ).apply {
-                createParameterDeclarations()
-                val typeTranslator = TypeTranslator(context.ir.symbols.externalSymbolTable, context.state.languageVersionSettings,
-                                                    enterTableScope=true)
-                val constantValueGenerator = ConstantValueGenerator(context.state.module, context.ir.symbols.externalSymbolTable)
-                typeTranslator.constantValueGenerator = constantValueGenerator
-                constantValueGenerator.typeTranslator = typeTranslator
-                functionReferenceClassDescriptor.typeConstructor.supertypes.mapTo(this.superTypes) {
-                    typeTranslator.translateType(it)
-                }
+            functionReferenceClass = buildClass {
+                setSourceRange(irFunctionReference)
+                origin = JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
+                name = "${callee.name}\$${functionReferenceCount++}".synthesizedName
+                kind = ClassKind.CLASS
+                visibility = Visibilities.PUBLIC
+                modality = Modality.FINAL
+            }.apply {
+                parent = referenceParent
+                superTypes.addAll(functionReferenceClassSuperTypes)
+                createImplicitParameterDeclarationWithWrappedDescriptor()
             }
-
-            val contributedDescriptors = mutableListOf<DeclarationDescriptor>()
-            val constructorBuilder = createConstructorBuilder()
-            functionReferenceClassDescriptor.initialize(
-                SimpleMemberScope(contributedDescriptors), setOf(constructorBuilder.symbol.descriptor), null
-            )
 
             functionReferenceThis = functionReferenceClass.thisReceiver!!.symbol
 
-            val invokeFunctionDescriptor = functionClassDescriptor.getFunction("invoke", functionClassTypeParameters)
+            argumentToFieldMap = boundCalleeParameters.associate {
+                it to buildField(it.name.safeName(), it.type)
+            }
 
-            val invokeMethodBuilder = createInvokeMethodBuilder(invokeFunctionDescriptor)
+            val constructor = createConstructor()
+            functionReferenceClass.declarations.add(constructor)
 
-            constructorBuilder.initialize()
-            functionReferenceClass.declarations.add(constructorBuilder.ir)
-
-            invokeMethodBuilder.initialize()
-            functionReferenceClass.declarations.add(invokeMethodBuilder.ir)
+            val superInvokeFunction = functionClass.functions.find { it.name.asString() == "invoke" }!!
+            val invokeMethod = createInvokeMethod(superInvokeFunction)
+            functionReferenceClass.declarations.add(invokeMethod)
 
             if (!isLambda) {
-                val getSignatureBuilder =
-                    createGetSignatureMethodBuilder(functionReferenceOrLambda.owner.descriptor.getFunction("getSignature", emptyList()))
-                val getNameBuilder = createGetNameMethodBuilder(functionReferenceOrLambda.owner.descriptor.getProperty("name", emptyList()))
-                val getOwnerBuilder =
-                    createGetOwnerMethodBuilder(functionReferenceOrLambda.owner.descriptor.getFunction("getOwner", emptyList()))
+                val getSignatureMethod =
+                    createGetSignatureMethod(functionReferenceOrLambda.owner.functions.find { it.name.asString() == "getSignature"}!!)
+                val getNameMethod =
+                    createGetNameMethod(functionReferenceOrLambda.owner.functions.find { it.name.asString() == "getName" }!!)
+                val getOwnerMethod =
+                    createGetOwnerMethod(functionReferenceOrLambda.owner.functions.find { it.name.asString() == "getOwner" }!!)
 
-                val suspendInvokeMethodBuilder =
-                    if (suspendFunctionClassDescriptor != null) {
-                        val suspendInvokeFunctionDescriptor =
-                            suspendFunctionClassDescriptor.getFunction("invoke", suspendFunctionClassTypeParameters!!)
-                        createInvokeMethodBuilder(suspendInvokeFunctionDescriptor)
+                val suspendInvokeMethod =
+                    if (suspendFunctionClass != null) {
+                        val suspendInvokeFunction =
+                            suspendFunctionClass.functions.find { it.name.asString() == "invoke" }!!
+                        createInvokeMethod(suspendInvokeFunction)
                     } else null
 
-                val inheritedScope = functionReferenceOrLambda.descriptor.unsubstitutedMemberScope
-                    .getContributedDescriptors().mapNotNull { it.createFakeOverrideDescriptor(functionReferenceClassDescriptor) }
-                    .filterNot { !isLambda && (it.name.asString() == "getSignature" || it.name.asString() == "name" || it.name.asString() == "getOwner") }
-
-                contributedDescriptors.addAll(
-                    (
-                            inheritedScope + invokeMethodBuilder.symbol.descriptor +
-                                    suspendInvokeMethodBuilder?.symbol?.descriptor + getSignatureBuilder.symbol.descriptor
-                            ).filterNotNull()
-                )
-
-                getSignatureBuilder.initialize()
-                functionReferenceClass.declarations.add(getSignatureBuilder.ir)
-
-                getNameBuilder.initialize()
-                functionReferenceClass.declarations.add(getNameBuilder.ir)
-
-                getOwnerBuilder.initialize()
-                functionReferenceClass.declarations.add(getOwnerBuilder.ir)
-
-                suspendInvokeMethodBuilder?.let {
-                    it.initialize()
-                    functionReferenceClass.declarations.add(it.ir)
-                }
+                functionReferenceClass.declarations.add(getSignatureMethod)
+                functionReferenceClass.declarations.add(getNameMethod)
+                functionReferenceClass.declarations.add(getOwnerMethod)
+                suspendInvokeMethod?.let { functionReferenceClass.declarations.add(it) }
             }
 
-            return BuiltFunctionReference(functionReferenceClass, constructorBuilder.ir)
+            return BuiltFunctionReference(functionReferenceClass, constructor)
         }
 
-        private fun createConstructorBuilder() = object : SymbolWithIrBuilder<IrConstructorSymbol, IrConstructor>() {
+        private fun createConstructor(): IrConstructor =
+            buildConstructor {
+                setSourceRange(irFunctionReference)
+                origin = JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
+                visibility = Visibilities.PUBLIC
+                returnType = functionReferenceClass.defaultType
+                isPrimary = true
+            }.apply {
+                val constructor = this
+                parent = functionReferenceClass
 
-            private val kFunctionRefConstructorSymbol =
-                functionReferenceOrLambda.constructors.filter { it.descriptor.valueParameters.size == if (isLambda) 1 else 2 }.single()
-
-            override fun buildSymbol() = IrConstructorSymbolImpl(
-                ClassConstructorDescriptorImpl.create(
-                    /* containingDeclaration = */ functionReferenceClassDescriptor,
-                    /* annotations           = */ Annotations.EMPTY,
-                    /* isPrimary             = */ false,
-                    /* source                = */ SourceElement.NO_SOURCE
-                )
-            )
-
-            override fun doInitialize() {
-                val descriptor = symbol.descriptor as ClassConstructorDescriptorImpl
-                val constructorParameters = boundFunctionParameters.mapIndexed { index, parameter ->
-                    parameter.copyAsValueParameter(descriptor, index, parameter.name)
+                val boundArgsSet = boundCalleeParameters.toSet()
+                for (param in callee.explicitParameters) {
+                    if (param in boundArgsSet) {
+                        val newParam = param.copyTo(
+                            constructor,
+                            index = valueParameters.size,
+                            type = param.type.substitute(typeArgumentsMap)
+                        )
+                        valueParameters.add(newParam)
+                    }
                 }
-                descriptor.initialize(constructorParameters, Visibilities.PUBLIC)
-                descriptor.returnType = functionReferenceClassDescriptor.defaultType
+
+                val kFunctionRefConstructorSymbol =
+                    functionReferenceOrLambda.constructors.filter { it.owner.valueParameters.size == if (isLambda) 1 else 2 }.single()
+
+                val irBuilder = context.createIrBuilder(this.symbol, startOffset, endOffset)
+                body = irBuilder.irBlockBody {
+                    +IrDelegatingConstructorCallImpl(
+                        startOffset, endOffset, context.irBuiltIns.unitType,
+                        kFunctionRefConstructorSymbol, kFunctionRefConstructorSymbol.descriptor
+                    ).apply {
+                        val const =
+                            IrConstImpl.int(startOffset, endOffset, context.irBuiltIns.intType, unboundCalleeParameters.size)
+                        putValueArgument(0, const)
+
+                        if (!isLambda) {
+                            val irReceiver = valueParameters.firstOrNull()
+                            val receiver = boundCalleeParameters.singleOrNull()
+                            //TODO pass proper receiver
+                            val receiverValue = receiver?.let {
+                                irGet(irReceiver!!.symbol.owner)
+                            } ?: irNull()
+                            putValueArgument(1, receiverValue)
+                        }
+                    }
+
+                    // Save all arguments to fields.
+                    //TODO don't write receiver again: use it from base class
+                    boundCalleeParameters.forEachIndexed { index, it ->
+                        +irSetField(
+                            irGet(functionReferenceThis.owner),
+                            argumentToFieldMap[it]!!,
+                            irGet(valueParameters[index])
+                        )
+                    }
+                    +IrInstanceInitializerCallImpl(startOffset, endOffset, functionReferenceClass.symbol, context.irBuiltIns.unitType)
+                }
             }
 
-            override fun buildIr(): IrConstructor {
-                argumentToPropertiesMap = boundFunctionParameters.associate {
-                    it to buildPropertyWithBackingField(it.name.safeName(), it.type)
-                }
+        private fun createInvokeMethod(superFunction: IrSimpleFunction): IrSimpleFunction =
+            buildFun {
+                setSourceRange(irFunctionReference)
+                origin = JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
+                name = Name.identifier("invoke")
+                visibility = Visibilities.PUBLIC
+                returnType = callee.returnType
+                isSuspend = superFunction.isSuspend
+            }.apply {
+                val function = this
+                parent = functionReferenceClass
+                overriddenSymbols.add(superFunction.symbol)
+                annotations.addAll(callee.annotations)
 
-                val startOffset = irFunctionReference.startOffset
-                val endOffset = irFunctionReference.endOffset
-                return IrConstructorImpl(
-                    startOffset = startOffset,
-                    endOffset = endOffset,
-                    origin = DECLARATION_ORIGIN_FUNCTION_REFERENCE_IMPL,
-                    symbol = symbol
-                ).apply {
-                    returnType = symbol.descriptor.returnType.toIrType()!!
+                dispatchReceiverParameter = functionReferenceClass.thisReceiver?.copyTo(function)
 
-                    val irBuilder = context.createIrBuilder(this.symbol, startOffset, endOffset)
-
-                    createParameterDeclarations()
-
-                    body = irBuilder.irBlockBody {
-                        +IrDelegatingConstructorCallImpl(
-                            startOffset, endOffset, context.irBuiltIns.unitType,
-                            kFunctionRefConstructorSymbol, kFunctionRefConstructorSymbol.descriptor
-                        ).apply {
-                            val const =
-                                IrConstImpl.int(startOffset, endOffset, context.irBuiltIns.intType, unboundFunctionParameters.size)
-                            putValueArgument(0, const)
-
-                            if (!isLambda) {
-                                val irReceiver = valueParameters.firstOrNull()
-                                val receiver = boundFunctionParameters.singleOrNull()
-                                //TODO pass proper receiver
-                                val receiverValue = receiver?.let {
-                                    irGet(irReceiver!!.symbol.owner)
-                                } ?: irNull()
-                                putValueArgument(1, receiverValue)
-                            }
-                        }
-
-                        //TODO don't write receiver again: use it from base class
-                        boundFunctionParameters.forEachIndexed { index, it ->
-                            +irSetField(
-                                irGet(functionReferenceThis.owner),
-                                argumentToPropertiesMap[it]!!.owner,
-                                irGet(valueParameters[index])
+                val unboundArgsSet = unboundCalleeParameters.toSet()
+                if (useVararg) {
+                    valueParameters.add(superFunction.valueParameters[0].copyTo(function))
+                } else {
+                    for (param in callee.explicitParameters) {
+                        if (param in unboundArgsSet) {
+                            val newParam = param.copyTo(
+                                function,
+                                index = valueParameters.size,
+                                type = param.type.substitute(typeArgumentsMap)
                             )
+                            valueParameters.add(newParam)
                         }
-                        +IrInstanceInitializerCallImpl(startOffset, endOffset, functionReferenceClass.symbol, context.irBuiltIns.unitType)
-                        // Save all arguments to fields.
-
-                    }
-                }
-            }
-        }
-
-        private fun createInvokeMethodBuilder(superFunctionDescriptor: FunctionDescriptor) =
-            object : SymbolWithIrBuilder<IrSimpleFunctionSymbol, IrSimpleFunction>() {
-
-                override fun buildSymbol() = IrSimpleFunctionSymbolImpl(
-                    SimpleFunctionDescriptorImpl.create(
-                        /* containingDeclaration = */ functionReferenceClassDescriptor,
-                        /* annotations           = */ Annotations.EMPTY,
-                        /* name                  = */ Name.identifier("invoke"),
-                        /* kind                  = */ CallableMemberDescriptor.Kind.DECLARATION,
-                        /* source                = */ SourceElement.NO_SOURCE
-                    )
-                )
-
-                override fun doInitialize() {
-                    val descriptor = symbol.descriptor as SimpleFunctionDescriptorImpl
-                    val valueParameters = superFunctionDescriptor.valueParameters
-                        .map { it.copyAsValueParameter(descriptor, it.index) }
-
-                    descriptor.initialize(
-                        /* receiverParameterType        = */ null,
-                        /* dispatchReceiverParameter    = */ functionReferenceClassDescriptor.thisAsReceiverParameter,
-                        /* typeParameters               = */ emptyList(),
-                        /* unsubstitutedValueParameters = */ valueParameters,
-                        /* unsubstitutedReturnType      = */ superFunctionDescriptor.returnType,
-                        /* modality                     = */ Modality.FINAL,
-                        /* visibility                   = */ Visibilities.PUBLIC
-                    ).apply {
-                        overriddenDescriptors += superFunctionDescriptor
-                        isSuspend = superFunctionDescriptor.isSuspend
                     }
                 }
 
-                override fun buildIr(): IrSimpleFunction {
-                    val startOffset = irFunctionReference.startOffset
-                    val endOffset = irFunctionReference.endOffset
-                    val ourSymbol = symbol
-                    return IrFunctionImpl(
-                        startOffset = startOffset,
-                        endOffset = endOffset,
-                        origin = DECLARATION_ORIGIN_FUNCTION_REFERENCE_IMPL,
-                        symbol = ourSymbol
-                    ).apply {
-
-                        val function = this
-                        val irBuilder = context.createIrBuilder(function.symbol, startOffset, endOffset)
-                        returnType = ourSymbol.descriptor.returnType!!.toIrType()!!
-                        createParameterDeclarations()
-
-                        body = irBuilder.irBlockBody(startOffset, endOffset) {
-                            val arrayGetFun = context.irBuiltIns.arrayClass.owner
-                                .declarations.find {
-                                (it as? IrSimpleFunction)?.name?.toString() == "get"
-                            }!! as IrSimpleFunction
-
-                            if (useVararg) {
-                                val varargParam = valueParameters.single()
-                                val arraySizeProperty = context.irBuiltIns.arrayClass.owner.declarations.find {
-                                    (it as? IrProperty)?.name?.toString() == "size"
-                                } as IrProperty
-                                +irIfThen(
-                                    irNotEquals(
-                                        irCall(arraySizeProperty.getter!!).apply {
-                                            dispatchReceiver = irGet(varargParam)
-                                        },
-                                        irInt(unboundFunctionParameters.size)
-                                    ),
-                                    irCall(context.irBuiltIns.illegalArgumentExceptionFun).apply {
-                                        putValueArgument(0, irString("Expected ${unboundFunctionParameters.size} arguments"))
-                                    }
-                                )
+                val irBuilder = context.createIrBuilder(function.symbol, startOffset, endOffset)
+                body = irBuilder.irBlockBody(startOffset, endOffset) {
+                    val arrayGetFun = context.irBuiltIns.arrayClass.owner.functions.find { it.name.asString() == "get" }!!
+                    if (useVararg) {
+                        val varargParam = valueParameters.single()
+                        val arraySizeProperty = context.irBuiltIns.arrayClass.owner.properties.find { it.name.toString() == "size" }!!
+                        +irIfThen(
+                            irNotEquals(
+                                irCall(arraySizeProperty.getter!!).apply {
+                                    dispatchReceiver = irGet(varargParam)
+                                },
+                                irInt(unboundCalleeParameters.size)
+                            ),
+                            irCall(context.irBuiltIns.illegalArgumentExceptionSymbol).apply {
+                                putValueArgument(0, irString("Expected ${unboundCalleeParameters.size} arguments"))
                             }
-                            +irReturn(
-                                irCall(irFunctionReference.symbol).apply {
-                                    var unboundIndex = 0
-                                    val unboundArgsSet = unboundFunctionParameters.toSet()
+                        )
+                    }
+                    +irReturn(
+                        irCall(irFunctionReference.symbol).apply {
+                            var unboundIndex = 0
 
-                                    functionParameters.forEach { parameter ->
-                                        val argument = when {
-                                            !unboundArgsSet.contains(parameter) ->
-                                                // Bound parameter - read from field.
-                                                irGetField(irGet(functionReferenceThis.owner), argumentToPropertiesMap[parameter]!!.owner)
-                                            ourSymbol.descriptor.isSuspend && unboundIndex == valueParameters.size ->
-                                                // For suspend functions the last argument is continuation and it is implicit.
-                                                TODO()
+                            calleeParameters.forEach { parameter ->
+                                val argument = when {
+                                    !unboundArgsSet.contains(parameter) ->
+                                        // Bound parameter - read from field.
+                                        irGetField(irGet(functionReferenceThis.owner), argumentToFieldMap[parameter]!!)
+                                    function.isSuspend && unboundIndex == valueParameters.size ->
+                                        // For suspend functions the last argument is continuation and it is implicit.
+                                        TODO()
 //                                                        irCall(getContinuationSymbol,
 //                                                               listOf(ourSymbol.descriptor.returnType!!))
-                                            useVararg -> {
-                                                val type = parameter.type.toIrType()!!
-                                                val varargParam = valueParameters.single()
-                                                irBlock(resultType = type) {
-                                                    val argValue = irTemporary(
-                                                        irCall(arrayGetFun).apply {
-                                                            dispatchReceiver = irGet(varargParam)
-                                                            putValueArgument(0, irInt(unboundIndex++))
-                                                        }
-                                                    )
-                                                    +irIfThen(
-                                                        irNotIs(irGet(argValue), type),
-                                                        irCall(context.irBuiltIns.illegalArgumentExceptionFun).apply {
-                                                            putValueArgument(0, irString("Wrong type, expected $type"))
-                                                        }
-                                                    )
-                                                    +irGet(argValue)
+                                    useVararg -> {
+                                        val type = parameter.type
+                                        val varargParam = valueParameters.single()
+                                        irBlock(resultType = type) {
+                                            val argValue = irTemporary(
+                                                irCall(arrayGetFun).apply {
+                                                    dispatchReceiver = irGet(varargParam)
+                                                    putValueArgument(0, irInt(unboundIndex++))
                                                 }
-                                            }
-                                            else -> {
-                                                irGet(valueParameters[unboundIndex++])
-                                            }
-                                        }
-                                        when (parameter) {
-                                            functionDescriptor.dispatchReceiverParameter -> dispatchReceiver = argument
-                                            functionDescriptor.extensionReceiverParameter -> extensionReceiver = argument
-                                            else -> putValueArgument((parameter as ValueParameterDescriptor).index, argument)
+                                            )
+                                            +irIfThen(
+                                                irNotIs(irGet(argValue), type),
+                                                irCall(context.irBuiltIns.illegalArgumentExceptionSymbol).apply {
+                                                    putValueArgument(0, irString("Wrong type, expected $type"))
+                                                }
+                                            )
+                                            +irGet(argValue)
                                         }
                                     }
-
-                                    if (!useVararg) assert(unboundIndex == valueParameters.size) { "Not all arguments of <invoke> are used" }
+                                    else -> {
+                                        irGet(valueParameters[unboundIndex++])
+                                    }
                                 }
-                            )
+                                when (parameter) {
+                                    callee.dispatchReceiverParameter -> dispatchReceiver = argument
+                                    callee.extensionReceiverParameter -> extensionReceiver = argument
+                                    else -> putValueArgument(parameter.index, argument)
+                                }
+                            }
+
+                            if (!useVararg) assert(unboundIndex == valueParameters.size) { "Not all arguments of <invoke> are used" }
                         }
-                    }
+                    )
                 }
+
             }
 
-        private fun buildPropertyWithBackingField(name: Name, type: KotlinType): IrFieldSymbol {
-            val fieldSymbol = IrFieldSymbolImpl(
-                JvmPropertyDescriptorImpl.createFinalField(
-                    name, type, functionReferenceClassDescriptor,
-                    Annotations.EMPTY, JavaVisibilities.PACKAGE_VISIBILITY, Opcodes.ACC_SYNTHETIC, SourceElement.NO_SOURCE
-                )
-            )
-            val field = IrFieldImpl(
-                irFunctionReference.startOffset,
-                irFunctionReference.endOffset,
-                DECLARATION_ORIGIN_FUNCTION_REFERENCE_IMPL,
-                fieldSymbol,
-                type.toIrType()!!
-            )
-
-            functionReferenceClass.declarations.add(field)
-            return fieldSymbol
-        }
-
-        private fun createGetNameMethodBuilder(superNameProperty: PropertyDescriptor) =
-            object : SymbolWithIrBuilder<IrSimpleFunctionSymbol, IrSimpleFunction>() {
-
-                override fun buildSymbol() = IrSimpleFunctionSymbolImpl(
-                    PropertyDescriptorImpl.create(
-                        /* containingDeclaration = */ functionReferenceClassDescriptor,
-                        /* annotations           = */ Annotations.EMPTY,
-                                                      superNameProperty.modality,
-                                                      superNameProperty.visibility,
-                                                      false,
-                        /* name                  = */ superNameProperty.name,
-                        /* kind                  = */ CallableMemberDescriptor.Kind.DECLARATION,
-                        /* source                = */ SourceElement.NO_SOURCE,
-                                                      false, false, false, false, false, false
-                    ).let { property ->
-
-                        property.overriddenDescriptors += superNameProperty
-                        PropertyGetterDescriptorImpl(
-                            property,
-                            Annotations.EMPTY,
-                            Modality.OPEN,
-                            Visibilities.PUBLIC,
-                            false, false, false,
-                            CallableMemberDescriptor.Kind.DECLARATION,
-                            null,
-                            SourceElement.NO_SOURCE
-                        ).also {
-                            property.initialize(it, null)
-                            property.setType(
-                                /* outType                   = */ superNameProperty.type,
-                                /* typeParameters            = */ superNameProperty.typeParameters,
-                                /* dispatchReceiverParameter = */ superNameProperty.dispatchReceiverParameter,
-                                /* extensionReceiverParameter= */ superNameProperty.extensionReceiverParameter
-                            )
-                            //overriddenDescriptors += superNameProperty.getter
-                        }
-                    }
-                )
-
-                override fun doInitialize() {
-                    val descriptor = symbol.descriptor as PropertyGetterDescriptorImpl
-                    descriptor.initialize(superNameProperty.type)
-                }
-
-                override fun buildIr(): IrSimpleFunction {
-                    val startOffset = irFunctionReference.startOffset
-                    val endOffset = irFunctionReference.endOffset
-                    val ourSymbol = symbol
-                    return IrFunctionImpl(
-                        startOffset = startOffset,
-                        endOffset = endOffset,
-                        origin = DECLARATION_ORIGIN_FUNCTION_REFERENCE_IMPL,
-                        symbol = ourSymbol
-                    ).apply {
-
-                        val function = this
-                        val irBuilder = context.createIrBuilder(function.symbol, startOffset, endOffset)
-                        returnType = ourSymbol.descriptor.returnType!!.toIrType()!!
-
-                        createParameterDeclarations()
-
-                        body = irBuilder.irBlockBody(startOffset, endOffset) {
-                            +irReturn(
-                                IrConstImpl.string(-1, -1, context.irBuiltIns.stringType, functionDescriptor.name.asString())
-                            )
-                        }
-                    }
-                }
+        private fun buildField(fieldName: Name, fieldType: IrType): IrField =
+            buildField {
+                setSourceRange(irFunctionReference)
+                origin = JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
+                name = fieldName
+                type = fieldType
+                visibility = JavaVisibilities.PACKAGE_VISIBILITY
+                isFinal = true
+            }.also {
+                it.parent = functionReferenceClass
+                functionReferenceClass.declarations.add(it)
             }
 
+        private fun createGetSignatureMethod(superFunction: IrSimpleFunction): IrSimpleFunction =
+            buildFun {
+                setSourceRange(irFunctionReference)
+                origin = JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
+                name = Name.identifier("getSignature")
+                returnType = superFunction.returnType
+                visibility = superFunction.visibility
+                modality = superFunction.modality
+            }.apply {
+                val function = this
+                parent = functionReferenceClass
+                overriddenSymbols.add(superFunction.symbol)
+                dispatchReceiverParameter = functionReferenceClass.thisReceiver!!.copyTo(function)
 
-        private fun createGetSignatureMethodBuilder(superFunctionDescriptor: FunctionDescriptor) =
-            object : SymbolWithIrBuilder<IrSimpleFunctionSymbol, IrSimpleFunction>() {
-
-                override fun buildSymbol() = IrSimpleFunctionSymbolImpl(
-                    SimpleFunctionDescriptorImpl.create(
-                        /* containingDeclaration = */ functionReferenceClassDescriptor,
-                        /* annotations           = */ Annotations.EMPTY,
-                        /* name                  = */ Name.identifier("getSignature"),
-                        /* kind                  = */ CallableMemberDescriptor.Kind.DECLARATION,
-                        /* source                = */ SourceElement.NO_SOURCE
-                    )
-                )
-
-                override fun doInitialize() {
-                    val descriptor = symbol.descriptor as SimpleFunctionDescriptorImpl
-                    val valueParameters = superFunctionDescriptor.valueParameters
-                        .map { it.copyAsValueParameter(descriptor, it.index) }
-
-                    descriptor.initialize(
-                        /* receiverParameterType        = */ null,
-                        /* dispatchReceiverParameter    = */ functionReferenceClassDescriptor.thisAsReceiverParameter,
-                        /* typeParameters               = */ emptyList(),
-                        /* unsubstitutedValueParameters = */ valueParameters,
-                        /* unsubstitutedReturnType      = */ superFunctionDescriptor.returnType,
-                        /* modality                     = */ Modality.FINAL,
-                        /* visibility                   = */ Visibilities.PUBLIC
-                    ).apply {
-                        overriddenDescriptors += superFunctionDescriptor
-                        isSuspend = superFunctionDescriptor.isSuspend
-                    }
-                }
-
-                override fun buildIr(): IrSimpleFunction {
-                    val startOffset = irFunctionReference.startOffset
-                    val endOffset = irFunctionReference.endOffset
-                    val ourSymbol = symbol
-                    return IrFunctionImpl(
-                        startOffset = startOffset,
-                        endOffset = endOffset,
-                        origin = DECLARATION_ORIGIN_FUNCTION_REFERENCE_IMPL,
-                        symbol = ourSymbol
-                    ).apply {
-
-                        val function = this
-                        val irBuilder = context.createIrBuilder(function.symbol, startOffset, endOffset)
-                        returnType = ourSymbol.descriptor.returnType!!.toIrType()!!
-
-                        createParameterDeclarations()
-
-                        body = irBuilder.irBlockBody(startOffset, endOffset) {
-                            +irReturn(
-                                IrConstImpl.string(
-                                    -1, -1, context.irBuiltIns.stringType,
-                                    PropertyReferenceCodegen.getSignatureString(
-                                        irFunctionReference.symbol.descriptor, this@CallableReferenceLowering.context.state
-                                    )
-                                )
+                val irBuilder = context.createIrBuilder(function.symbol, startOffset, endOffset)
+                body = irBuilder.irBlockBody(startOffset, endOffset) {
+                    +irReturn(
+                        IrConstImpl.string(
+                            -1, -1, context.irBuiltIns.stringType,
+                            PropertyReferenceCodegen.getSignatureString(
+                                irFunctionReference.symbol.descriptor, this@CallableReferenceLowering.context.state
                             )
-                        }
-                    }
-                }
-            }
-
-        private fun createGetOwnerMethodBuilder(superFunctionDescriptor: FunctionDescriptor) =
-            object : SymbolWithIrBuilder<IrSimpleFunctionSymbol, IrSimpleFunction>() {
-
-                override fun buildSymbol() = IrSimpleFunctionSymbolImpl(
-                    SimpleFunctionDescriptorImpl.create(
-                        /* containingDeclaration = */ functionReferenceClassDescriptor,
-                        /* annotations           = */ Annotations.EMPTY,
-                        /* name                  = */ Name.identifier("getOwner"),
-                        /* kind                  = */ CallableMemberDescriptor.Kind.DECLARATION,
-                        /* source                = */ SourceElement.NO_SOURCE
-                    )
-                )
-
-                override fun doInitialize() {
-                    val descriptor = symbol.descriptor as SimpleFunctionDescriptorImpl
-                    val valueParameters = superFunctionDescriptor.valueParameters
-                        .map { it.copyAsValueParameter(descriptor, it.index) }
-
-                    descriptor.initialize(
-                        /* receiverParameterType        = */ null,
-                        /* dispatchReceiverParameter    = */ functionReferenceClassDescriptor.thisAsReceiverParameter,
-                        /* typeParameters               = */ emptyList(),
-                        /* unsubstitutedValueParameters = */ valueParameters,
-                        /* unsubstitutedReturnType      = */ superFunctionDescriptor.returnType,
-                        /* modality                     = */ Modality.FINAL,
-                        /* visibility                   = */ Visibilities.PUBLIC
-                    ).apply {
-                        overriddenDescriptors += superFunctionDescriptor
-                        isSuspend = superFunctionDescriptor.isSuspend
-                    }
-                }
-
-                override fun buildIr(): IrSimpleFunction {
-                    val startOffset = irFunctionReference.startOffset
-                    val endOffset = irFunctionReference.endOffset
-                    val ourSymbol = symbol
-                    return IrFunctionImpl(
-                        startOffset = startOffset,
-                        endOffset = endOffset,
-                        origin = DECLARATION_ORIGIN_FUNCTION_REFERENCE_IMPL,
-                        symbol = ourSymbol
-                    ).apply {
-                        returnType = symbol.descriptor.returnType!!.toIrType()!!
-                        val function = this
-                        val irBuilder = context.createIrBuilder(function.symbol, startOffset, endOffset)
-
-                        createParameterDeclarations()
-
-                        body = irBuilder.irBlockBody(startOffset, endOffset) {
-                            +irReturn(
-                                generateCallableReferenceDeclarationContainer(irFunctionReference)
-                            )
-                        }
-                    }
-                }
-
-                fun IrBuilderWithScope.generateCallableReferenceDeclarationContainer(
-                    irFunctionReference: IrFunctionReference
-                ): IrExpression {
-                    val descriptor = irFunctionReference.symbol.descriptor
-                    val globalContext = this@CallableReferenceLowering.context
-                    val state = globalContext.state
-                    val container = descriptor.containingDeclaration
-
-                    val type =
-                        when {
-                            container is ClassDescriptor ->
-                                // TODO: getDefaultType() here is wrong and won't work for arrays
-                                state.typeMapper.mapType(container.defaultType)
-                            container is PackageFragmentDescriptor ->
-                                state.typeMapper.mapOwner(descriptor)
-                            descriptor is VariableDescriptorWithAccessors ->
-                                globalContext.state.bindingContext.get(
-                                    CodegenBinding.DELEGATED_PROPERTY_METADATA_OWNER, descriptor
-                                )!!
-                            else -> state.typeMapper.mapOwner(descriptor)
-                        }
-
-                    val clazzDescriptor = globalContext.getClass(FqName("java.lang.Class"))
-                    val clazzSymbol = globalContext.ir.symbols.externalSymbolTable.referenceClass(clazzDescriptor)
-                    val clazzRef = IrClassReferenceImpl(
-                        UNDEFINED_OFFSET,
-                        UNDEFINED_OFFSET,
-                        clazzDescriptor.toIrType(),
-                        clazzSymbol,
-                        CrIrType(type)
-                    )
-
-                    val isContainerPackage = if (descriptor is LocalVariableDescriptor)
-                        DescriptorUtils.getParentOfType(descriptor, ClassDescriptor::class.java) == null
-                    else
-                        container is PackageFragmentDescriptor
-
-                    val reflectionClass = globalContext.getClass(FqName("kotlin.jvm.internal.Reflection"))
-                    return if (isContainerPackage) {
-                        // Note that this name is not used in reflection. There should be the name of the referenced declaration's module instead,
-                        // but there's no nice API to obtain that name here yet
-                        // TODO: write the referenced declaration's module name and use it in reflection
-                        val module = IrConstImpl.string(
-                            -1, -1, globalContext.irBuiltIns.stringType,
-                            state.moduleName
                         )
-                        val functionDescriptor = reflectionClass.getStaticFunction("getOrCreateKotlinPackage", emptyList())
-                        val functionSymbol = globalContext.ir.symbols.externalSymbolTable.referenceSimpleFunction(functionDescriptor)
-                        irCall(functionSymbol, functionSymbol.owner.returnType).apply {
-                            putValueArgument(0, clazzRef)
-                            putValueArgument(1, module)
-                        }
-                    } else {
-                        val functionDescriptor = reflectionClass.staticScope
-                            .getContributedFunctions(Name.identifier("getOrCreateKotlinClass"), NoLookupLocation.FROM_BACKEND)
-                            .single { it.valueParameters.size == 1 }
-                        val functionSymbol = globalContext.ir.symbols.externalSymbolTable.referenceSimpleFunction(functionDescriptor)
-                        irCall(functionSymbol, functionSymbol.owner.returnType).apply {
-                            putValueArgument(0, clazzRef)
-                        }
-                    }
+                    )
                 }
             }
 
+        private fun createGetNameMethod(superFunction: IrSimpleFunction): IrSimpleFunction =
+            buildFun {
+                setSourceRange(irFunctionReference)
+                origin = JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
+                name = Name.identifier("getName")
+                returnType = superFunction.returnType
+                visibility = superFunction.visibility
+                modality = superFunction.modality
+            }.apply {
+                val function = this
+                parent = functionReferenceClass
+                overriddenSymbols.add(superFunction.symbol)
+                dispatchReceiverParameter = functionReferenceClass.thisReceiver?.copyTo(function)
 
+                val irBuilder = context.createIrBuilder(function.symbol, startOffset, endOffset)
+                body = irBuilder.irBlockBody(startOffset, endOffset) {
+                    +irReturn(
+                        IrConstImpl.string(-1, -1, context.irBuiltIns.stringType, callee.name.asString())
+                    )
+                }
+            }
+
+        private fun createGetOwnerMethod(superFunction: IrSimpleFunction): IrSimpleFunction =
+            buildFun {
+                setSourceRange(functionReferenceClass)
+                origin = JvmLoweredDeclarationOrigin.FUNCTION_REFERENCE_IMPL
+                name = Name.identifier("getOwner")
+                returnType = superFunction.returnType
+                visibility = superFunction.visibility
+                modality = superFunction.modality
+            }.apply {
+                val function = this
+                parent = functionReferenceClass
+                overriddenSymbols.add(superFunction.symbol)
+                dispatchReceiverParameter = functionReferenceClass.thisReceiver?.copyTo(function)
+
+                val irBuilder = context.createIrBuilder(function.symbol, startOffset, endOffset)
+                body = irBuilder.irBlockBody(startOffset, endOffset) {
+                    +irReturn(
+                        generateCallableReferenceDeclarationContainer()
+                    )
+                }
+            }
+
+        fun IrBuilderWithScope.generateCallableReferenceDeclarationContainer(): IrExpression {
+            val globalContext = this@CallableReferenceLowering.context
+            val state = globalContext.state
+            val irContainer = callee.parent
+
+            val isContainerPackage =
+                ((irContainer as? IrClass)?.origin == IrDeclarationOrigin.FILE_CLASS) || irContainer is IrPackageFragment
+
+            val type = when {
+                irContainer is IrClass ->
+                    // TODO: getDefaultType() here is wrong and won't work for arrays
+                    state.typeMapper.mapType(irContainer.defaultType.toKotlinType())
+
+//                    // TODO: this code is only needed for property references, which are not yet supported.
+//                    descriptor is VariableDescriptorWithAccessors -> {
+//                        assert(false) { "VariableDescriptorWithAccessors" }
+//                        globalContext.state.bindingContext.get(
+//                            CodegenBinding.DELEGATED_PROPERTY_METADATA_OWNER, descriptor
+//                        )!!
+//                    }
+
+                else -> state.typeMapper.mapOwner(callee.descriptor)
+            }
+
+            val clazz = globalContext.ir.symbols.javaLangClass
+            val clazzRef = IrClassReferenceImpl(
+                UNDEFINED_OFFSET,
+                UNDEFINED_OFFSET,
+                clazz.typeWith(),
+                clazz,
+                CrIrType(type)
+            )
+
+            return if (isContainerPackage) {
+                // Note that this name is not used in reflection. There should be the name of the referenced declaration's module instead,
+                // but there's no nice API to obtain that name here yet
+                // TODO: write the referenced declaration's module name and use it in reflection
+                val module = IrConstImpl.string(
+                    -1, -1, globalContext.irBuiltIns.stringType,
+                    state.moduleName
+                )
+                irCall(globalContext.ir.symbols.getOrCreateKotlinPackage).apply {
+                    putValueArgument(0, clazzRef)
+                    putValueArgument(1, module)
+                }
+            } else {
+                irCall(globalContext.ir.symbols.getOrCreateKotlinClass).apply {
+                    putValueArgument(0, clazzRef)
+                }
+            }
+        }
     }
 
     //TODO rewrite
@@ -798,38 +591,25 @@ class CallableReferenceLowering(val context: JvmBackendContext) : FileLoweringPa
     }
 }
 
-// Copied from K/Native IrUtils2.kt
-// TODO move IrUtils2.kt to common
-private fun IrClass.createParameterDeclarations() {
-    thisReceiver = IrValueParameterImpl(
-        startOffset, endOffset,
-        IrDeclarationOrigin.INSTANCE_RECEIVER,
-        descriptor.thisAsReceiverParameter,
-        this.symbol.typeWith(this.typeParameters.map { it.defaultType }),
-        null
-    ).also { valueParameter ->
-        valueParameter.parent = this
+// TODO: Move to IrUtils
+private fun IrType.substitute(substitutionMap: Map<IrTypeParameter, IrType>): IrType {
+    if (this !is IrSimpleType) return this
+
+    substitutionMap[classifier]?.let { return it }
+
+    val newArguments = arguments.map {
+        if (it is IrTypeProjection) {
+            makeTypeProjection(it.type.substitute(substitutionMap), it.variance)
+        } else {
+            it
+        }
     }
 
-    assert(typeParameters.isEmpty())
-    assert(descriptor.declaredTypeParameters.isEmpty())
+    val newAnnotations = annotations.map { it.deepCopyWithSymbols() }
+    return IrSimpleTypeImpl(
+        classifier,
+        hasQuestionMark,
+        newArguments,
+        newAnnotations
+    )
 }
-
-private val IrTypeParameter.defaultType: IrType get() = this.symbol.defaultType
-
-private val IrTypeParameterSymbol.defaultType: IrType
-    get() = IrSimpleTypeImpl(
-        this,
-        false,
-        emptyList(),
-        emptyList()
-    )
-
-
-private fun IrClassifierSymbol.typeWith(arguments: List<IrType>): IrSimpleType =
-    IrSimpleTypeImpl(
-        this,
-        false,
-        arguments.map { makeTypeProjection(it, Variance.INVARIANT) },
-        emptyList()
-    )

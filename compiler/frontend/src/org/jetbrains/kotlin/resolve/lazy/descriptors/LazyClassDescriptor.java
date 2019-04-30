@@ -1,6 +1,6 @@
 /*
- * Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2000-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve.lazy.descriptors;
@@ -18,6 +18,7 @@ import org.jetbrains.kotlin.descriptors.*;
 import org.jetbrains.kotlin.descriptors.annotations.Annotations;
 import org.jetbrains.kotlin.descriptors.impl.ClassDescriptorBase;
 import org.jetbrains.kotlin.descriptors.impl.FunctionDescriptorImpl;
+import org.jetbrains.kotlin.diagnostics.DiagnosticFactory0;
 import org.jetbrains.kotlin.incremental.components.NoLookupLocation;
 import org.jetbrains.kotlin.lexer.KtTokens;
 import org.jetbrains.kotlin.name.Name;
@@ -227,11 +228,22 @@ public class LazyClassDescriptor extends ClassDescriptorBase implements ClassDes
             KtTypeParameterList typeParameterList = classInfo.getTypeParameterList();
             if (typeParameterList == null) return Collections.emptyList();
 
+            boolean isAnonymousObject = (classInfo.getClassKind() == ClassKind.CLASS) && (classInfo.getCorrespondingClassOrObject() instanceof KtObjectDeclaration);
+
             if (classInfo.getClassKind() == ClassKind.ENUM_CLASS) {
                 c.getTrace().report(TYPE_PARAMETERS_IN_ENUM.on(typeParameterList));
             }
             if (classInfo.getClassKind() == ClassKind.OBJECT) {
                 c.getTrace().report(TYPE_PARAMETERS_IN_OBJECT.on(typeParameterList));
+            }
+            if (isAnonymousObject) {
+                DiagnosticFactory0<KtTypeParameterList> diagnosticFactory;
+                if (c.getLanguageVersionSettings().supportsFeature(LanguageFeature.ProhibitTypeParametersInAnonymousObjects)) {
+                    diagnosticFactory = TYPE_PARAMETERS_IN_OBJECT;
+                } else {
+                    diagnosticFactory = TYPE_PARAMETERS_IN_ANONYMOUS_OBJECT;
+                }
+                c.getTrace().report(diagnosticFactory.on(typeParameterList));
             }
 
             List<KtTypeParameter> typeParameters = typeParameterList.getParameters();
@@ -352,8 +364,8 @@ public class LazyClassDescriptor extends ClassDescriptorBase implements ClassDes
 
     @NotNull
     @Override
+    @SuppressWarnings("unchecked")
     public Collection<CallableMemberDescriptor> getDeclaredCallableMembers() {
-        //noinspection unchecked
         return (Collection) CollectionsKt.filter(
                 DescriptorUtils.getAllDescriptors(unsubstitutedMemberScope),
                 descriptor -> descriptor instanceof CallableMemberDescriptor
@@ -432,7 +444,7 @@ public class LazyClassDescriptor extends ClassDescriptorBase implements ClassDes
                 /* parentClassOrObject= */ classOrObject,
                 this, syntheticCompanionName, getSource(),
                 /* outerScope= */ getOuterScope(),
-                Modality.FINAL, PUBLIC, PRIVATE, ClassKind.OBJECT, true);
+                Modality.FINAL, PUBLIC, Annotations.Companion.getEMPTY(), PRIVATE, ClassKind.OBJECT, true);
         companionDescriptor.initialize();
         return companionDescriptor;
     }
@@ -440,7 +452,7 @@ public class LazyClassDescriptor extends ClassDescriptorBase implements ClassDes
     @Nullable
     private static KtClassLikeInfo getCompanionObjectInfo(@Nullable KtObjectDeclaration companionObject) {
         if (companionObject != null) {
-            return KtClassInfoUtil.createClassLikeInfo(companionObject);
+            return KtClassInfoUtil.createClassOrObjectInfo(companionObject);
         }
 
         return null;

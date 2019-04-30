@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.resolve
@@ -421,9 +421,12 @@ object ModifierCheckerCore {
         actualTargets: List<KotlinTarget>,
         languageVersionSettings: LanguageVersionSettings
     ) {
+        if (list.stub != null) return
+
         // It's a list of all nodes with error already reported
         // General strategy: report no more than one error but any number of warnings
         val incorrectNodes = hashSetOf<ASTNode>()
+
         val children = list.node.getChildren(MODIFIER_KEYWORD_SET)
         for (second in children) {
             for (first in children) {

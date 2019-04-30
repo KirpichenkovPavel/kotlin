@@ -18,30 +18,80 @@ package org.jetbrains.kotlin.backend.common.lower
 
 import org.jetbrains.kotlin.backend.common.CommonBackendContext
 import org.jetbrains.kotlin.backend.common.FileLoweringPass
+import org.jetbrains.kotlin.backend.common.ir.Symbols
+import org.jetbrains.kotlin.backend.common.phaser.makeIrFilePhase
 import org.jetbrains.kotlin.ir.IrStatement
 import org.jetbrains.kotlin.ir.UNDEFINED_OFFSET
 import org.jetbrains.kotlin.ir.builders.*
 import org.jetbrains.kotlin.ir.declarations.*
-import org.jetbrains.kotlin.ir.expressions.IrBlock
+import org.jetbrains.kotlin.ir.expressions.IrCall
+import org.jetbrains.kotlin.ir.expressions.IrExpression
+import org.jetbrains.kotlin.ir.expressions.IrGetValue
+import org.jetbrains.kotlin.ir.expressions.IrPropertyReference
 import org.jetbrains.kotlin.ir.expressions.impl.IrBlockBodyImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrBlockImpl
 import org.jetbrains.kotlin.ir.expressions.impl.IrConstImpl
-import org.jetbrains.kotlin.ir.expressions.impl.IrExpressionBodyImpl
-import org.jetbrains.kotlin.ir.types.IrType
 import org.jetbrains.kotlin.ir.types.isPrimitiveType
+import org.jetbrains.kotlin.ir.util.resolveFakeOverride
 import org.jetbrains.kotlin.ir.visitors.IrElementTransformerVoid
 import org.jetbrains.kotlin.ir.visitors.transformChildrenVoid
 
-class LateinitLowering(
-    val context: CommonBackendContext,
-    private val generateParameterNameInAssertion: Boolean = false
-) : FileLoweringPass {
+val jvmLateinitPhase = makeIrFilePhase(
+    ::LateinitLowering,
+    name = "Lateinit",
+    description = "Insert checks for lateinit field references"
+)
+
+class LateinitLowering(val context: CommonBackendContext) : FileLoweringPass {
     override fun lower(irFile: IrFile) {
         irFile.transformChildrenVoid(object : IrElementTransformerVoid() {
             override fun visitProperty(declaration: IrProperty): IrStatement {
-                if (declaration.isLateinit && declaration.origin != IrDeclarationOrigin.FAKE_OVERRIDE)
+                declaration.transformChildrenVoid(this)
+                if (declaration.isLateinit && declaration.origin != IrDeclarationOrigin.FAKE_OVERRIDE) {
                     transformGetter(declaration.backingField!!, declaration.getter!!)
+                }
                 return declaration
+            }
+
+            override fun visitVariable(declaration: IrVariable): IrStatement {
+                declaration.transformChildrenVoid(this)
+
+                if (!declaration.isLateinit) return declaration
+
+                declaration.run { initializer = IrConstImpl.constNull(startOffset, endOffset, type) }
+
+                return declaration
+            }
+
+            override fun visitGetValue(expression: IrGetValue): IrExpression {
+                val irVar = expression.symbol.owner as? IrVariable ?: return expression
+
+                if (!irVar.isLateinit) return expression
+
+                val parent = irVar.parent as IrSymbolOwner
+
+                val irBuilder = context.createIrBuilder(parent.symbol, expression.startOffset, expression.endOffset)
+
+                return irBuilder.run {
+                    irIfThenElse(
+                        expression.type, irEqualsNull(irGet(irVar)),
+                        throwUninitializedPropertyAccessException(irVar.name.asString()),
+                        irGet(irVar)
+                    )
+                }
+            }
+
+            override fun visitCall(expression: IrCall): IrExpression {
+                expression.transformChildrenVoid(this)
+
+                if (!Symbols.isLateinitIsInitializedPropertyGetter(expression.symbol)) return expression
+
+                val receiver = expression.extensionReceiver as IrPropertyReference
+
+                val property = receiver.getter?.owner?.resolveFakeOverride()?.correspondingProperty!!.also { assert(it.isLateinit) }
+
+                return expression.run { context.createIrBuilder(symbol, startOffset, endOffset) }.run {
+                    irNotEquals(irGetField(receiver.dispatchReceiver, property.backingField!!), irNull())
+                }
             }
 
             private fun transformGetter(backingField: IrField, getter: IrFunction) {
@@ -55,12 +105,13 @@ class LateinitLowering(
                     val resultVar = scope.createTemporaryVariable(
                         irGetField(getter.dispatchReceiverParameter?.let { irGet(it) }, backingField)
                     )
+                    resultVar.parent = getter
                     body.statements.add(resultVar)
                     val throwIfNull = irIfThenElse(
                         context.irBuiltIns.nothingType,
                         irNotEquals(irGet(resultVar), irNull()),
                         irReturn(irGet(resultVar)),
-                        throwUninitializedPropertyAccessException(backingField)
+                        throwUninitializedPropertyAccessException(backingField.name.asString())
                     )
                     body.statements.add(throwIfNull)
                     getter.body = body
@@ -69,23 +120,18 @@ class LateinitLowering(
         })
     }
 
-    private fun IrBuilderWithScope.throwUninitializedPropertyAccessException(backingField: IrField) =
+    private fun IrBuilderWithScope.throwUninitializedPropertyAccessException(name: String) =
         irCall(throwErrorFunction).apply {
-            if (generateParameterNameInAssertion) {
-                putValueArgument(
-                    0,
-                    IrConstImpl.string(
-                        UNDEFINED_OFFSET,
-                        UNDEFINED_OFFSET,
-                        context.irBuiltIns.stringType,
-                        backingField.name.asString()
-                    )
+            putValueArgument(
+                0,
+                IrConstImpl.string(
+                    UNDEFINED_OFFSET,
+                    UNDEFINED_OFFSET,
+                    context.irBuiltIns.stringType,
+                    name
                 )
-            }
+            )
         }
 
-    private val throwErrorFunction = context.ir.symbols.ThrowUninitializedPropertyAccessException.owner
-
-    private fun IrBuilderWithScope.irBlock(type: IrType): IrBlock = IrBlockImpl(startOffset, endOffset, type)
-
+    private val throwErrorFunction by lazy { context.ir.symbols.ThrowUninitializedPropertyAccessException.owner }
 }

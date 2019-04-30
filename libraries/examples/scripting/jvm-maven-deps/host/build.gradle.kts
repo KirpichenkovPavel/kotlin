@@ -1,4 +1,3 @@
-import org.jetbrains.kotlin.gradle.dsl.Coroutines
 
 plugins {
     kotlin("jvm")
@@ -7,7 +6,7 @@ plugins {
 dependencies {
     compile(project(":examples:scripting-jvm-maven-deps"))
     compile(project(":kotlin-scripting-jvm-host"))
-    compile(project(":kotlin-stdlib"))
+    compile(kotlinStdlib())
     compileOnly(project(":kotlin-reflect-api"))
     compileOnly(project(":compiler:util"))
     runtime(project(":kotlin-reflect"))
@@ -19,8 +18,4 @@ dependencies {
 sourceSets {
     "main" { projectDefault() }
     "test" { projectDefault() }
-}
-
-kotlin {
-    experimental.coroutines = Coroutines.ENABLE
 }

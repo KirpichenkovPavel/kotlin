@@ -99,7 +99,7 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
 
         private fun getMethodsOfClass(classFile: File): Set<String> {
             val result = TreeSet<String>()
-            ClassReader(FileUtil.loadFileBytes(classFile)).accept(object : ClassVisitor(Opcodes.ASM5) {
+            ClassReader(FileUtil.loadFileBytes(classFile)).accept(object : ClassVisitor(Opcodes.API_VERSION) {
                 override fun visitMethod(access: Int, name: String, desc: String, signature: String?, exceptions: Array<String>?): MethodVisitor? {
                     result.add(name)
                     return null
@@ -227,7 +227,7 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
     }
 
     fun testSourcePackageLongPrefix() {
-        initProject()
+        initProject(JVM_MOCK_RUNTIME)
         val buildResult = buildAllModules()
         buildResult.assertSuccessful()
         val warnings = buildResult.getMessages(BuildMessage.Kind.WARNING)
@@ -236,7 +236,7 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
     }
 
     fun testSourcePackagePrefixWithInnerClasses() {
-        initProject()
+        initProject(JVM_MOCK_RUNTIME)
         buildAllModules().assertSuccessful()
     }
 
@@ -266,6 +266,13 @@ open class KotlinJpsBuildTest : AbstractKotlinJpsBuildTestCase() {
         }
 
         return list.toTypedArray()
+    }
+
+    fun testKotlinJavaScriptProjectNewSourceRootTypes() {
+        initProject(JS_STDLIB)
+        buildAllModules().assertSuccessful()
+
+        checkOutputFilesList()
     }
 
     fun testKotlinJavaScriptProjectWithCustomOutputPaths() {

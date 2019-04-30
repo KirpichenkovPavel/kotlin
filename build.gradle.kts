@@ -1,19 +1,16 @@
 
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import org.gradle.api.Project
-import java.util.*
-import java.io.File
-import org.gradle.api.tasks.bundling.Jar
 import org.gradle.plugins.ide.idea.model.IdeaModel
 import org.jetbrains.kotlin.gradle.tasks.AbstractKotlinCompile
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-import org.jetbrains.kotlin.gradle.tasks.Kotlin2JsCompile
 import proguard.gradle.ProGuardTask
+import org.gradle.kotlin.dsl.*
 
 buildscript {
     extra["defaultSnapshotVersion"] = "1.3-SNAPSHOT"
 
-    kotlinBootstrapFrom(BootstrapOption.TeamCity("1.3.20-dev-564", onlySuccessBootstrap = false))
+    // when updating please also update JPS artifacts configuration: https://jetbrains.quip.com/zzGUAYSJ6gv3/JPS-Build-update-bootstrap
+    kotlinBootstrapFrom(BootstrapOption.TeamCity("1.3.40-dev-2251", onlySuccessBootstrap = false))
 
     repositories.withRedirector(project) {
         bootstrapKotlinRepo?.let(::maven)
@@ -30,14 +27,23 @@ buildscript {
 
         classpath("com.gradle.publish:plugin-publish-plugin:0.9.7")
         classpath(kotlin("gradle-plugin", bootstrapKotlinVersion))
-        classpath("net.sf.proguard:proguard-gradle:5.3.3")
+        classpath("net.sf.proguard:proguard-gradle:6.0.3")
+        classpath("org.jetbrains.dokka:dokka-gradle-plugin:0.9.17")
+
+        // a workaround to add another one buildSrc with Cidr-specific tools to Gradle classpath
+        if (findProperty("cidrPluginsEnabled")?.toString()?.toBoolean() == true) {
+            classpath("org.jetbrains.kotlin.ultimate:buildSrc:1.0")
+        }
     }
+
+    project(":prepare:idea-plugin").evaluationDependsOn(":prepare")
 }
 
 plugins {
-    `build-scan` version "1.15"
+    `build-scan`
     idea
     id("jps-compatible")
+    id("org.jetbrains.gradle.plugin.idea-ext")
 }
 
 pill {
@@ -74,11 +80,7 @@ allprojects {
 
 extra["kotlin_root"] = rootDir
 
-val cidrKotlinPlugin by configurations.creating
-
-dependencies {
-    cidrKotlinPlugin(project(":prepare:cidr-plugin", "runtimeJar"))
-}
+val jpsBootstrap by configurations.creating
 
 val commonBuildDir = File(rootDir, "build")
 val distDir by extra("$rootDir/dist")
@@ -87,9 +89,9 @@ val distLibDir = "$distKotlinHomeDir/lib"
 val commonLocalDataDir = "$rootDir/local"
 val ideaSandboxDir = "$commonLocalDataDir/ideaSandbox"
 val ideaUltimateSandboxDir = "$commonLocalDataDir/ideaUltimateSandbox"
-val ideaPluginDir = "$distDir/artifacts/ideaPlugin/Kotlin"
-val ideaUltimatePluginDir = "$distDir/artifacts/ideaUltimatePlugin/Kotlin"
-val cidrPluginDir = "$distDir/artifacts/cidrPlugin/Kotlin"
+val artifactsDir = "$distDir/artifacts"
+val ideaPluginDir = "$artifactsDir/ideaPlugin/Kotlin"
+val ideaUltimatePluginDir = "$artifactsDir/ideaUltimatePlugin/Kotlin"
 
 // TODO: use "by extra()" syntax where possible
 extra["distLibDir"] = project.file(distLibDir)
@@ -99,22 +101,44 @@ extra["ideaSandboxDir"] = project.file(ideaSandboxDir)
 extra["ideaUltimateSandboxDir"] = project.file(ideaUltimateSandboxDir)
 extra["ideaPluginDir"] = project.file(ideaPluginDir)
 extra["ideaUltimatePluginDir"] = project.file(ideaUltimatePluginDir)
-extra["cidrPluginDir"] = project.file(cidrPluginDir)
 extra["isSonatypeRelease"] = false
 
-extra["JDK_16"] = jdkPath("1.6")
-extra["JDK_17"] = jdkPath("1.7")
-extra["JDK_18"] = jdkPath("1.8")
-extra["JDK_9"] = jdkPath("9")
-extra["JDK_10"] = jdkPathIfFound("10")
-extra["JDK_11"] = jdkPathIfFound("11")
+// Work-around necessary to avoid setting null javaHome. Will be removed after support of lazy task configuration
+val jdkNotFoundConst = "JDK NOT FOUND"
 
-rootProject.apply {
-    from(rootProject.file("versions.gradle.kts"))
-    from(rootProject.file("report.gradle.kts"))
+extra["JDK_16"] = jdkPath("1.8")
+extra["JDK_17"] = jdkPath("1.8")
+extra["JDK_18"] = jdkPath("1.8")
+extra["JDK_9"] = jdkPath("1.8")
+extra["JDK_10"] = jdkPath("10")
+extra["JDK_11"] = jdkPath("11")
+
+gradle.taskGraph.beforeTask() {
+    checkJDK()
 }
 
-extra["versions.protobuf-java"] = "2.6.1"
+var jdkChecked: Boolean = false
+fun checkJDK() {
+    if (jdkChecked) {
+        return
+    }
+    var unpresentJdks = JdkMajorVersion.values().filter { it.isMandatory() }.map { it -> it.name }.filter { it == null || extra[it] == jdkNotFoundConst }.toList()
+    if (!unpresentJdks.isEmpty()) {
+        throw GradleException("Please set environment variable${if (unpresentJdks.size > 1) "s" else ""}: ${unpresentJdks.joinToString()} to point to corresponding JDK installation.")
+    }
+    jdkChecked = true
+}
+
+rootProject.apply {
+    from(rootProject.file("gradle/versions.gradle.kts"))
+    from(rootProject.file("gradle/report.gradle.kts"))
+    from(rootProject.file("gradle/javaInstrumentation.gradle.kts"))
+    from(rootProject.file("gradle/jps.gradle.kts"))
+}
+
+IdeVersionConfigurator.setCurrentIde(this)
+
+extra["versions.protobuf"] = "2.6.1"
 extra["versions.javax.inject"] = "1"
 extra["versions.jsr305"] = "1.3.9"
 extra["versions.jansi"] = "1.16"
@@ -123,8 +147,8 @@ extra["versions.junit"] = "4.12"
 extra["versions.javaslang"] = "2.0.6"
 extra["versions.ant"] = "1.8.2"
 extra["versions.android"] = "2.3.1"
-extra["versions.kotlinx-coroutines-core"] = "0.26.1-eap13"
-extra["versions.kotlinx-coroutines-jdk8"] = "0.26.1-eap13"
+extra["versions.kotlinx-coroutines-core"] = "1.1.1"
+extra["versions.kotlinx-coroutines-jdk8"] = "1.1.1"
 extra["versions.json"] = "20160807"
 extra["versions.native-platform"] = "0.14"
 extra["versions.ant-launcher"] = "1.8.0"
@@ -132,6 +156,12 @@ extra["versions.robolectric"] = "3.1"
 extra["versions.org.springframework"] = "4.2.0.RELEASE"
 extra["versions.jflex"] = "1.7.0"
 extra["versions.markdown"] = "0.1.25"
+extra["versions.trove4j"] = "1.0.20181211"
+extra["versions.kotlin-native-shared"] = "1.0-dev-50"
+
+if (!project.hasProperty("versions.kotlin-native")) {
+    extra["versions.kotlin-native"] = "1.3-dev-9780"
+}
 
 val isTeamcityBuild = project.hasProperty("teamcity") || System.getenv("TEAMCITY_VERSION") != null
 val intellijUltimateEnabled = project.getBooleanProperty("intellijUltimateEnabled") ?: isTeamcityBuild
@@ -144,8 +174,7 @@ extra["intellijUltimateEnabled"] = intellijUltimateEnabled
 extra["intellijSeparateSdks"] = intellijSeparateSdks
 
 extra["IntellijCoreDependencies"] =
-        listOf("annotations",
-               "asm-all",
+        listOf(if (Platform[191].orHigher()) "asm-all-7.0.1" else "asm-all",
                "guava",
                "jdom",
                "jna",
@@ -162,16 +191,30 @@ extra["compilerModules"] = arrayOf(
         ":compiler:resolution",
         ":compiler:serialization",
         ":compiler:psi",
+        *if (project.findProperty("fir.enabled") == "true") {
+            arrayOf(
+                ":compiler:fir:cones",
+                ":compiler:fir:resolve",
+                ":compiler:fir:tree",
+                ":compiler:fir:psi2fir",
+                ":compiler:fir:fir2ir"
+            )
+        } else {
+            emptyArray()
+        },
         ":compiler:frontend",
+        ":compiler:frontend.common",
         ":compiler:frontend.java",
-        ":compiler:frontend.script",
         ":compiler:cli-common",
         ":compiler:daemon-common",
         ":compiler:daemon",
         ":compiler:ir.tree",
         ":compiler:ir.psi2ir",
         ":compiler:ir.backend.common",
+        ":compiler:backend.jvm",
         ":compiler:backend.js",
+        ":compiler:ir.serialization.common",
+        ":compiler:ir.serialization.js",
         ":compiler:backend-common",
         ":compiler:backend",
         ":compiler:plugin-api",
@@ -191,15 +234,15 @@ extra["compilerModules"] = arrayOf(
         ":core:descriptors",
         ":core:descriptors.jvm",
         ":core:deserialization",
-        ":core:util.runtime"
+        ":core:util.runtime",
+        ":core:type-system"
 )
 
 val coreLibProjects = listOf(
         ":kotlin-stdlib",
         ":kotlin-stdlib-common",
         ":kotlin-stdlib-js",
-        ":kotlin-stdlib-jre7",
-        ":kotlin-stdlib-jre8",
+        ":kotlin-stdlib-js-ir",
         ":kotlin-stdlib-jdk7",
         ":kotlin-stdlib-jdk8",
         ":kotlin-test:kotlin-test-common",
@@ -245,13 +288,20 @@ fun Task.listConfigurationContents(configName: String) {
 }
 
 val defaultJvmTarget = "1.8"
-val defaultJavaHome = jdkPath(defaultJvmTarget!!)
+val defaultJavaHome = jdkPath(defaultJvmTarget)
 val ignoreTestFailures by extra(project.findProperty("ignoreTestFailures")?.toString()?.toBoolean() ?: project.hasProperty("teamcity"))
 
 allprojects {
 
+    configurations.maybeCreate("embedded")
+    
     jvmTarget = defaultJvmTarget
-    javaHome = defaultJavaHome
+    if (defaultJavaHome != null) {
+        javaHome = defaultJavaHome
+    } else {
+        logger.error("Could not find default java home. Please set environment variable JDK_${defaultJavaHome} to point to JDK ${defaultJavaHome} installation.")
+    }
+
 
     // There are problems with common build dir:
     //  - some tests (in particular js and binary-compatibility-validator depend on the fixed (default) location
@@ -261,12 +311,15 @@ allprojects {
 
     val mirrorRepo: String? = findProperty("maven.repository.mirror")?.toString()
 
-    repositories.withRedirector(project) {
-        intellijSdkRepo(project)
-        androidDxJarRepo(project)
+    repositories {
+        kotlinBuildLocalRepo(project)
         mirrorRepo?.let(::maven)
         bootstrapKotlinRepo?.let(::maven)
         jcenter()
+        maven(protobufRepo)
+        maven(intellijRepo)
+        maven(bootstrapKotlinRepo!!.replace("artifacts/content/maven/", "artifacts/content/internal/repo"))
+        maven(kotlinNativeRepo)
     }
 
     configureJvmProject(javaHome!!, jvmTarget!!)
@@ -274,6 +327,7 @@ allprojects {
     val commonCompilerArgs = listOfNotNull(
         "-Xallow-kotlin-package",
         "-Xread-deserialized-contracts",
+        "-Xjvm-default=compatibility",
         "-Xprogressive".takeIf { hasProperty("test.progressive.mode") } // TODO: change to "-progressive" after bootstrap
     )
 
@@ -299,10 +353,6 @@ allprojects {
         enabled = false
     }
 
-    task<Jar>("javadocJar") {
-        classifier = "javadoc"
-    }
-
     tasks.withType<Jar> {
         duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     }
@@ -314,10 +364,10 @@ allprojects {
     task("listDistJar") { listConfigurationContents("distJar") }
 
     afterEvaluate {
-        logger.info("configuring project $name to compile to the target jvm version $jvmTarget using jdk: $javaHome")
         if (javaHome != defaultJavaHome || jvmTarget != defaultJvmTarget) {
+            logger.info("configuring project $name to compile to the target jvm version $jvmTarget using jdk: $javaHome")
             configureJvmProject(javaHome!!, jvmTarget!!)
-        }
+        } // else we will actually fail during the first task execution. We could not fail before configuration is done due to impact on import in IDE
 
         fun File.toProjectRootRelativePathOrSelf() = (relativeToOrNull(rootDir)?.takeUnless { it.startsWith("..") } ?: this).path
 
@@ -392,9 +442,13 @@ tasks {
 
     create("cleanupArtifacts") {
         doLast {
-            delete(ideaPluginDir)
-            delete(ideaUltimatePluginDir)
-            delete(cidrPluginDir)
+            delete(artifactsDir)
+        }
+    }
+
+    listOf("clean", "assemble", "install", "dist").forEach { taskName ->
+        create("coreLibs${taskName.capitalize()}") {
+            coreLibProjects.forEach { projectName -> dependsOn("$projectName:$taskName") }
         }
     }
 
@@ -425,6 +479,7 @@ tasks {
                   ":compiler:container:test",
                   ":compiler:tests-java8:test",
                   ":compiler:tests-spec:remoteRunTests")
+        dependsOn(":plugins:jvm-abi-gen:test")
     }
 
     create("jsCompilerTest") {
@@ -432,18 +487,27 @@ tasks {
         dependsOn(":js:js.tests:runMocha")
     }
 
+    create("firCompilerTest") {
+        dependsOn(":compiler:fir:psi2fir:test")
+        dependsOn(":compiler:fir:resolve:test")
+        dependsOn(":compiler:fir:fir2ir:test")
+    }
+
     create("scriptingTest") {
         dependsOn("dist")
         dependsOn(":kotlin-script-util:test")
+        dependsOn(":kotlin-scripting-jvm-host:test")
     }
 
     create("compilerTest") {
         dependsOn("jvmCompilerTest")
         dependsOn("jsCompilerTest")
+        dependsOn("firCompilerTest")
 
         dependsOn("scriptingTest")
         dependsOn(":kotlin-build-common:test")
         dependsOn(":compiler:incremental-compilation-impl:test")
+        dependsOn(":core:descriptors.runtime:test")
     }
 
     create("toolsTest") {
@@ -486,9 +550,10 @@ tasks {
     create("idea-plugin-additional-tests") {
         dependsOn("dist")
         dependsOn(":idea:idea-gradle:test",
+                  ":idea:idea-gradle-native:test",
                   ":idea:idea-maven:test",
                   ":j2k:test",
-                  ":eval4j:test")
+                  ":idea:eval4j:test")
     }
 
     create("idea-plugin-tests") {
@@ -595,43 +660,6 @@ val zipPlugin by task<Zip> {
     }
 }
 
-val cidrPlugin by task<Copy> {
-    dependsOn(ideaPlugin)
-    into(cidrPluginDir)
-    from(ideaPluginDir) {
-        exclude("lib/kotlin-plugin.jar")
-
-        exclude("lib/android-lint.jar")
-        exclude("lib/android-ide.jar")
-        exclude("lib/android-output-parser-ide.jar")
-        exclude("lib/android-extensions-ide.jar")
-        exclude("lib/android-extensions-compiler.jar")
-        exclude("lib/kapt3-idea.jar")
-        exclude("lib/jps-ide.jar")
-        exclude("lib/jps/**")
-        exclude("kotlinc/**")
-        exclude("lib/maven-ide.jar")
-    }
-    from(cidrKotlinPlugin) { into("lib") }
-}
-
-val zipCidrPlugin by task<Zip> {
-    val destPath = project.findProperty("pluginZipPath") as String?
-            ?: "$distDir/artifacts/kotlin-plugin-$kotlinVersion-CIDR.zip"
-    val destFile = File(destPath)
-
-    destinationDir = destFile.parentFile
-    archiveName = destFile.name
-
-    from(cidrPlugin)
-    into("Kotlin")
-    setExecutablePermissions()
-
-    doLast {
-        logger.lifecycle("Plugin artifacts packed to $archivePath")
-    }
-}
-
 configure<IdeaModel> {
     module {
         excludeDirs = files(
@@ -644,14 +672,12 @@ configure<IdeaModel> {
     }
 }
 
-fun jdkPathIfFound(version: String): String? {
+fun jdkPath(version: String): String {
     val jdkName = "JDK_${version.replace(".", "")}"
     val jdkMajorVersion = JdkMajorVersion.valueOf(jdkName)
-    return configuredJdks.find { it.majorVersion == jdkMajorVersion }?.homeDir?.canonicalPath
+    return configuredJdks.find { it.majorVersion == jdkMajorVersion }?.homeDir?.canonicalPath?:jdkNotFoundConst
 }
 
-fun jdkPath(version: String): String = jdkPathIfFound(version)
-        ?: throw GradleException ("Please set environment variable JDK_${version.replace(".", "")} to point to JDK $version installation")
 
 fun Project.configureJvmProject(javaHome: String, javaVersion: String) {
     tasks.withType<JavaCompile> {
@@ -666,6 +692,7 @@ fun Project.configureJvmProject(javaHome: String, javaVersion: String) {
     tasks.withType<KotlinCompile> {
         kotlinOptions.jdkHome = javaHome
         kotlinOptions.jvmTarget = javaVersion
+        kotlinOptions.freeCompilerArgs += "-Xjvm-default=compatibility"
     }
 
     tasks.withType<Test> {
@@ -708,5 +735,14 @@ tasks.create("findShadowJarsInClasspath").doLast {
     for (project in rootProject.allprojects) {
         project.checkConfig("compileClasspath")
         project.checkConfig("testCompileClasspath")
+    }
+}
+
+allprojects {
+    afterEvaluate {
+        if (cacheRedirectorEnabled()) {
+            logger.info("Redirecting repositories for $displayName")
+            repositories.redirect()
+        }
     }
 }

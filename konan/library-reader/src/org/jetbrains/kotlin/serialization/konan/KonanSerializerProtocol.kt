@@ -1,6 +1,6 @@
 /*
- * Copyright 2010-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license
- * that can be found in the license/LICENSE.txt file.
+ * Copyright 2010-2018 JetBrains s.r.o. and Kotlin Programming Language contributors.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the license/LICENSE.txt file.
  */
 
 package org.jetbrains.kotlin.serialization.konan
@@ -10,12 +10,14 @@ import org.jetbrains.kotlin.protobuf.ExtensionRegistryLite
 import org.jetbrains.kotlin.serialization.SerializerExtensionProtocol
 
 object KonanSerializerProtocol : SerializerExtensionProtocol(
-    ExtensionRegistryLite.newInstance().apply { KonanProtoBuf.registerAllExtensions(this) },
+    ExtensionRegistryLite.newInstance().apply(KonanProtoBuf::registerAllExtensions),
     KonanProtoBuf.packageFqName,
     KonanProtoBuf.constructorAnnotation,
     KonanProtoBuf.classAnnotation,
     KonanProtoBuf.functionAnnotation,
     KonanProtoBuf.propertyAnnotation,
+    KonanProtoBuf.propertyGetterAnnotation,
+    KonanProtoBuf.propertySetterAnnotation,
     KonanProtoBuf.enumEntryAnnotation,
     KonanProtoBuf.compileTimeValue,
     KonanProtoBuf.parameterAnnotation,

@@ -38,8 +38,12 @@ import org.jetbrains.kotlin.idea.KotlinFileType
 import org.jetbrains.kotlin.idea.caches.project.SdkInfo
 import org.jetbrains.kotlin.idea.caches.project.getScriptRelatedModuleInfo
 import org.jetbrains.kotlin.idea.core.script.settings.KotlinScriptingSettings
-import org.jetbrains.kotlin.script.*
-import org.jetbrains.kotlin.scripting.compiler.plugin.KotlinScriptDefinitionAdapterFromNewAPI
+import org.jetbrains.kotlin.script.ScriptTemplatesProvider
+import org.jetbrains.kotlin.scripting.definitions.KotlinScriptDefinition
+import org.jetbrains.kotlin.scripting.definitions.KotlinScriptDefinitionAdapterFromNewAPI
+import org.jetbrains.kotlin.scripting.definitions.LazyScriptDefinitionProvider
+import org.jetbrains.kotlin.scripting.definitions.ScriptDefinitionProvider
+import org.jetbrains.kotlin.scripting.resolve.KotlinScriptDefinitionFromAnnotatedTemplate
 import org.jetbrains.kotlin.utils.PathUtil
 import org.jetbrains.kotlin.utils.addToStdlib.firstIsInstanceOrNull
 import org.jetbrains.kotlin.utils.addToStdlib.flattenTo
@@ -58,18 +62,21 @@ import kotlin.script.experimental.host.configurationDependencies
 import kotlin.script.experimental.host.createCompilationConfigurationFromTemplate
 import kotlin.script.experimental.jvm.JvmDependency
 import kotlin.script.experimental.jvm.defaultJvmScriptingHostConfiguration
-import kotlin.script.experimental.jvm.util.scriptCompilationClasspathFromContextOrStlib
+import kotlin.script.experimental.jvm.util.scriptCompilationClasspathFromContextOrStdlib
 import kotlin.script.templates.standard.ScriptTemplateWithArgs
 
 class ScriptDefinitionsManager(private val project: Project) : LazyScriptDefinitionProvider() {
     private var definitionsByContributor = mutableMapOf<ScriptDefinitionContributor, List<KotlinScriptDefinition>>()
     private var definitions: List<KotlinScriptDefinition>? = null
 
+    private val failedContributorsHashes = HashSet<Int>()
+
     private val scriptDefinitionsCacheLock = ReentrantReadWriteLock()
     private val scriptDefinitionsCache = SLRUMap<String, KotlinScriptDefinition>(10, 10)
 
     override fun findScriptDefinition(fileName: String): KotlinScriptDefinition? {
         if (nonScriptFileName(fileName)) return null
+        if (!isReady()) return null
 
         val cached = synchronized(scriptDefinitionsCacheLock) { scriptDefinitionsCache.get(fileName) }
         if (cached != null) return cached
@@ -140,8 +147,16 @@ class ScriptDefinitionsManager(private val project: Project) : LazyScriptDefinit
         }
     }
 
+    fun isReady(): Boolean {
+        return definitionsByContributor.keys.all { contributor ->
+            contributor.isReady()
+        }
+    }
+
     override fun getDefaultScriptDefinition(): KotlinScriptDefinition {
-        return StandardIdeScriptDefinition(project)
+        val standardScriptDefinitionContributor = ScriptDefinitionContributor.find<StandardScriptDefinitionContributor>(project)
+            ?: error("StandardScriptDefinitionContributor should be registered is plugin.xml")
+        return standardScriptDefinitionContributor.getDefinitions().last()
     }
 
     private fun updateDefinitions() {
@@ -182,13 +197,14 @@ class ScriptDefinitionsManager(private val project: Project) : LazyScriptDefinit
     }
 
     private fun ScriptDefinitionContributor.safeGetDefinitions(): List<KotlinScriptDefinition> {
-        return try {
-            getDefinitions()
+        if (!failedContributorsHashes.contains(this@safeGetDefinitions.hashCode())) try {
+            return getDefinitions()
         } catch (t: Throwable) {
-            // TODO: review exception handling
-            // possibly log, see KT-19276
-            emptyList()
+            // reporting failed loading only once
+            LOG.error("[kts] cannot load script definitions using $this", t)
+            failedContributorsHashes.add(this@safeGetDefinitions.hashCode())
         }
+        return emptyList()
     }
 
     companion object {
@@ -223,8 +239,7 @@ fun loadDefinitionsFromTemplates(
             // as a compatibility measure, the asm based reading of annotations should be implemented to filter classes before classloading
             val template = loader.loadClass(templateClassName).kotlin
             when {
-                template.annotations.firstIsInstanceOrNull<org.jetbrains.kotlin.script.ScriptTemplateDefinition>() != null ||
-                        template.annotations.firstIsInstanceOrNull<kotlin.script.templates.ScriptTemplateDefinition>() != null -> {
+                template.annotations.firstIsInstanceOrNull<kotlin.script.templates.ScriptTemplateDefinition>() != null -> {
                     KotlinScriptDefinitionFromAnnotatedTemplate(
                         template,
                         environment,
@@ -265,6 +280,7 @@ interface ScriptDefinitionContributor {
     val id: String
 
     fun getDefinitions(): List<KotlinScriptDefinition>
+    fun isReady() = true
 
     companion object {
         val EP_NAME: ExtensionPointName<ScriptDefinitionContributor> =
@@ -276,14 +292,16 @@ interface ScriptDefinitionContributor {
 
 }
 
-class StandardScriptDefinitionContributor(private val project: Project) : ScriptDefinitionContributor {
-    override fun getDefinitions() = listOf(StandardIdeScriptDefinition(project))
+class StandardScriptDefinitionContributor(project: Project) : ScriptDefinitionContributor {
+    private val standardIdeScriptDefinition = StandardIdeScriptDefinition(project)
+
+    override fun getDefinitions() = listOf(standardIdeScriptDefinition)
 
     override val id: String = "StandardKotlinScript"
 }
 
 
-class StandardIdeScriptDefinition(project: Project) : KotlinScriptDefinition(ScriptTemplateWithArgs::class) {
+class StandardIdeScriptDefinition internal constructor(project: Project) : KotlinScriptDefinition(ScriptTemplateWithArgs::class) {
     override val dependencyResolver = BundledKotlinScriptDependenciesResolver(project)
 }
 
@@ -300,7 +318,7 @@ class BundledKotlinScriptDependenciesResolver(private val project: Project) : De
             listOf(reflectPath, stdlibPath, scriptRuntimePath)
         }
         if (ScratchFileService.getInstance().getRootType(virtualFile) is IdeConsoleRootType) {
-            classpath = scriptCompilationClasspathFromContextOrStlib(wholeClasspath = true) + classpath
+            classpath = scriptCompilationClasspathFromContextOrStdlib(wholeClasspath = true) + classpath
         }
 
         return ScriptDependencies(javaHome = javaHome?.let(::File), classpath = classpath).asSuccess()

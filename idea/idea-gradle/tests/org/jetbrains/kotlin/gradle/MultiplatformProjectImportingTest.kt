@@ -23,15 +23,16 @@ import com.intellij.openapi.roots.impl.ModuleOrderEntryImpl
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.util.PathUtil
 import junit.framework.TestCase
-import org.jetbrains.kotlin.idea.codeInsight.gradle.GradleImportingTestCase
+import org.jetbrains.kotlin.idea.codeInsight.gradle.MultiplePluginVersionGradleImportingTestCase
 import org.jetbrains.kotlin.idea.codeInsight.gradle.facetSettings
 import org.jetbrains.kotlin.idea.facet.KotlinFacet
 import org.jetbrains.kotlin.idea.util.rootManager
 import org.jetbrains.kotlin.test.KotlinTestUtils
-import org.jetbrains.plugins.gradle.tooling.annotation.TargetVersions
 import org.junit.Test
 
-class MultiplatformProjectImportingTest : GradleImportingTestCase() {
+class MultiplatformProjectImportingTest : MultiplePluginVersionGradleImportingTestCase() {
+
+    private fun legacyMode() = gradleVersion.split(".")[0].toInt() < 4
     private fun getDependencyLibraryUrls(moduleName: String) =
         getRootManager(moduleName)
             .orderEntries
@@ -49,6 +50,10 @@ class MultiplatformProjectImportingTest : GradleImportingTestCase() {
 
     private fun assertFileInModuleScope(file: VirtualFile, moduleName: String) {
         assert(getModule(moduleName).getModuleWithDependenciesAndLibrariesScope(true).contains(file))
+    }
+
+    override fun isApplicableTest(): Boolean {
+        return shouldRunTest(gradleKotlinPluginVersion, gradleVersion)
     }
 
     @Test
@@ -83,22 +88,6 @@ class MultiplatformProjectImportingTest : GradleImportingTestCase() {
         assertModuleModuleDepScope("js_test", "common1_test", DependencyScope.COMPILE)
         assertNoDepForModule("js_main", "common2_main")
         assertNoDepForModule("js_test", "common2_test")
-    }
-
-    @Test
-    fun testPlatformToCommonExpectedByDependencyInComposite() {
-        configureByFiles()
-        importProject()
-
-        TestCase.assertEquals(listOf("common_main"), facetSettings("jvm_main").implementedModuleNames)
-        TestCase.assertEquals(listOf("common_test"), facetSettings("jvm_test").implementedModuleNames)
-        TestCase.assertEquals(listOf("common_main"), facetSettings("js_main").implementedModuleNames)
-        TestCase.assertEquals(listOf("common_test"), facetSettings("js_test").implementedModuleNames)
-
-        assertModuleModuleDepScope("jvm_main", "common_main", DependencyScope.COMPILE)
-        assertModuleModuleDepScope("jvm_test", "common_test", DependencyScope.COMPILE)
-        assertModuleModuleDepScope("js_main", "common_main", DependencyScope.COMPILE)
-        assertModuleModuleDepScope("js_test", "common_test", DependencyScope.COMPILE)
     }
 
     @Test
@@ -141,10 +130,8 @@ class MultiplatformProjectImportingTest : GradleImportingTestCase() {
         assertModuleModuleDepScope("jvm-app_test", "common-lib2_test", DependencyScope.COMPILE)
     }
 
-    @TargetVersions("3.5")
     @Test
     fun testTransitiveImplement() {
-        // TODO fix for 4.9
         configureByFiles()
 
         val isResolveModulePerSourceSet = getCurrentExternalProjectSettings().isResolveModulePerSourceSet
@@ -179,17 +166,20 @@ class MultiplatformProjectImportingTest : GradleImportingTestCase() {
             importProject()
 
             assertModuleModuleDepScope("project2", "project1", DependencyScope.COMPILE)
-            assertModuleModuleDepScope("project3", "project2", DependencyScope.TEST, DependencyScope.PROVIDED, DependencyScope.RUNTIME)
+            if (legacyMode()) {
+                // This data is obtained from Gradle model. Actually RUNTIME+TEST+PROVIDED == COMPILE, thus this difference does not matter for user
+                assertModuleModuleDepScope("project3", "project2", DependencyScope.RUNTIME, DependencyScope.TEST, DependencyScope.PROVIDED)
+            } else {
+                assertModuleModuleDepScope("project3", "project2", DependencyScope.COMPILE)
+            }
             assertModuleModuleDepScope("project3", "project1", DependencyScope.COMPILE)
         } finally {
             currentExternalProjectSettings.isResolveModulePerSourceSet = isResolveModulePerSourceSet
         }
     }
 
-    @TargetVersions("3.5")
     @Test
     fun testTransitiveImplementWithNonDefaultConfig() {
-        // TODO fix for 4.9
         configureByFiles()
 
         val isResolveModulePerSourceSet = getCurrentExternalProjectSettings().isResolveModulePerSourceSet
@@ -215,7 +205,12 @@ class MultiplatformProjectImportingTest : GradleImportingTestCase() {
              * due to IDEA importer limitations
              */
             assertModuleModuleDepScope("project2", "project1", DependencyScope.COMPILE)
-            assertModuleModuleDepScope("project3", "project2", DependencyScope.TEST, DependencyScope.PROVIDED, DependencyScope.RUNTIME)
+            if (legacyMode()) {
+                assertModuleModuleDepScope("project3", "project2", DependencyScope.TEST, DependencyScope.PROVIDED, DependencyScope.RUNTIME)
+            } else {
+                assertModuleModuleDepScope("project3", "project2", DependencyScope.COMPILE)
+            }
+
             assertModuleModuleDepScope("project3", "project1", DependencyScope.COMPILE)
 
             TestCase.assertEquals(
@@ -285,45 +280,39 @@ class MultiplatformProjectImportingTest : GradleImportingTestCase() {
         }
     }
 
-    @TargetVersions("3.5")
     @Test
     fun testJsTestOutputFile() {
-        // TODO fix for 4.9
         configureByFiles()
 
         importProject()
 
         TestCase.assertEquals(
-            projectPath + "/project2/build/classes/test/project2_test.js",
+            projectPath + "/project2/build/classes/${if (legacyMode()) "" else "kotlin/"}test/project2_test.js",
             PathUtil.toSystemIndependentName(KotlinFacet.get(getModule("project2_main"))!!.configuration.settings.testOutputPath)
         )
         TestCase.assertEquals(
-            projectPath + "/project2/build/classes/test/project2_test.js",
+            projectPath + "/project2/build/classes/${if (legacyMode()) "" else "kotlin/"}test/project2_test.js",
             PathUtil.toSystemIndependentName(KotlinFacet.get(getModule("project2_test"))!!.configuration.settings.testOutputPath)
         )
     }
 
-    @TargetVersions("3.5")
     @Test
     fun testJsProductionOutputFile() {
-        // TODO fix for 4.9
         configureByFiles()
         importProject()
 
         TestCase.assertEquals(
-            projectPath + "/project2/build/classes/main/project2.js",
+            projectPath + "/project2/build/classes/${if (legacyMode()) "" else "kotlin/"}main/project2.js",
             PathUtil.toSystemIndependentName(KotlinFacet.get(getModule("project2_main"))!!.configuration.settings.productionOutputPath)
         )
         TestCase.assertEquals(
-            projectPath + "/project2/build/classes/main/project2.js",
+            projectPath + "/project2/build/classes/${if (legacyMode()) "" else "kotlin/"}main/project2.js",
             PathUtil.toSystemIndependentName(KotlinFacet.get(getModule("project2_test"))!!.configuration.settings.productionOutputPath)
         )
     }
 
-    @TargetVersions("3.5")
     @Test
     fun testJsTestOutputFileInProjectWithAndroid() {
-        // TODO fix for 4.9
         configureByFiles()
         createProjectSubFile(
             "local.properties", """
@@ -334,7 +323,7 @@ class MultiplatformProjectImportingTest : GradleImportingTestCase() {
         importProject()
 
         TestCase.assertEquals(
-            projectPath + "/project2/build/classes/test/project2_test.js",
+            projectPath + "/project2/build/classes/${if (legacyMode()) "" else "kotlin/"}test/project2_test.js",
             PathUtil.toSystemIndependentName(KotlinFacet.get(getModule("project2"))!!.configuration.settings.testOutputPath)
         )
     }

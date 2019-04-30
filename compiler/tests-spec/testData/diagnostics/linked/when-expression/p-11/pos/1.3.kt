@@ -1,43 +1,41 @@
-// !WITH_ENUM_CLASSES
-// !WITH_SEALED_CLASSES
 
 /*
- KOTLIN DIAGNOSTICS SPEC TEST (POSITIVE)
-
- SECTIONS: when-expression
- PARAGRAPH: 11
- SENTENCE: [1] It has an else entry;
- NUMBER: 3
- DESCRIPTION: Check when exhaustive via else entry (when with bound value, redundant else).
+ * KOTLIN DIAGNOSTICS SPEC TEST (POSITIVE)
+ *
+ * SPEC VERSION: 0.1-draft
+ * PLACE: when-expression -> paragraph 11 -> sentence 1
+ * NUMBER: 3
+ * DESCRIPTION: Check when exhaustive via else entry (when with bound value, redundant else).
+ * HELPERS: enumClasses, sealedClasses
  */
 
-// CASE DESCRIPTION: Checking for redundant 'else' branch (all enum values covered).
-fun case_1(value_1: _EnumClass): String = when (value_1) {
-    _EnumClass.EAST -> ""
-    _EnumClass.NORTH -> ""
-    _EnumClass.SOUTH -> ""
-    _EnumClass.WEST -> ""
+// TESTCASE NUMBER: 1
+fun case_1(value_1: EnumClass): String = when (value_1) {
+    EnumClass.EAST -> ""
+    EnumClass.NORTH -> ""
+    EnumClass.SOUTH -> ""
+    EnumClass.WEST -> ""
     <!REDUNDANT_ELSE_IN_WHEN!>else<!> -> ""
 }
 
-// CASE DESCRIPTION: Checking for redundant 'else' branch (all enum values and null value covered).
-fun case_2(value_1: _EnumClass?): String = when (value_1) {
-    _EnumClass.EAST -> ""
-    _EnumClass.NORTH -> ""
-    _EnumClass.SOUTH -> ""
-    _EnumClass.WEST -> ""
+// TESTCASE NUMBER: 2
+fun case_2(value_1: EnumClass?): String = when (value_1) {
+    EnumClass.EAST -> ""
+    EnumClass.NORTH -> ""
+    EnumClass.SOUTH -> ""
+    EnumClass.WEST -> ""
     null -> ""
     <!REDUNDANT_ELSE_IN_WHEN!>else<!> -> ""
 }
 
-// CASE DESCRIPTION: Checking for redundant 'else' branch (both boolean value covered).
+// TESTCASE NUMBER: 3
 fun case_3(value_1: Boolean): String = when (value_1) {
     true -> ""
     false -> ""
     <!REDUNDANT_ELSE_IN_WHEN!>else<!> -> ""
 }
 
-// CASE DESCRIPTION: Checking for redundant 'else' branch (both boolean value and null value covered).
+// TESTCASE NUMBER: 4
 fun case_4(value_1: Boolean?): String = when (value_1) {
     true -> ""
     false -> ""
@@ -45,32 +43,32 @@ fun case_4(value_1: Boolean?): String = when (value_1) {
     <!REDUNDANT_ELSE_IN_WHEN!>else<!> -> ""
 }
 
-// CASE DESCRIPTION: Checking for redundant 'else' branch (all sealed class subtypes covered).
-fun case_5(value_1: _SealedClass): String = when (value_1) {
-    is _SealedChild1 -> ""
-    is _SealedChild2 -> ""
-    is _SealedChild3 -> ""
+// TESTCASE NUMBER: 5
+fun case_5(value_1: SealedClass): String = when (value_1) {
+    is SealedChild1 -> ""
+    is SealedChild2 -> ""
+    is SealedChild3 -> ""
     <!REDUNDANT_ELSE_IN_WHEN!>else<!> -> ""
 }
 
-// CASE DESCRIPTION: Checking for redundant 'else' branch (all sealed class subtypes and null value covered).
-fun case_6(value_1: _SealedClass?): String = when (value_1) {
-    is _SealedChild1 -> ""
-    is _SealedChild2 -> ""
-    is _SealedChild3 -> ""
+// TESTCASE NUMBER: 6
+fun case_6(value_1: SealedClass?): String = when (value_1) {
+    is SealedChild1 -> ""
+    is SealedChild2 -> ""
+    is SealedChild3 -> ""
     null -> ""
     <!REDUNDANT_ELSE_IN_WHEN!>else<!> -> ""
 }
 
-// CASE DESCRIPTION: Checking for redundant 'else' branch (sealed class itself covered).
-fun case_7(value_1: _SealedClassSingle): String = when (value_1) {
-    <!USELESS_IS_CHECK!>is _SealedClassSingle<!> -> ""
+// TESTCASE NUMBER: 7
+fun case_7(value_1: SealedClassSingle): String = when (value_1) {
+    <!USELESS_IS_CHECK!>is SealedClassSingle<!> -> ""
     <!REDUNDANT_ELSE_IN_WHEN!>else<!> -> ""
 }
 
-// CASE DESCRIPTION: Checking for redundant 'else' branch (sealed class itself and null value covered).
-fun case_8(value_1: _SealedClassSingle?): String = when (value_1) {
-    is _SealedClassSingle -> ""
+// TESTCASE NUMBER: 8
+fun case_8(value_1: SealedClassSingle?): String = when (value_1) {
+    is SealedClassSingle -> ""
     null -> ""
     <!REDUNDANT_ELSE_IN_WHEN!>else<!> -> ""
 }

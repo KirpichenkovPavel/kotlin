@@ -1,5 +1,6 @@
+// KJS_WITH_FULL_RUNTIME
 // IGNORE_BACKEND: JVM_IR
-// WITH_UNSIGNED
+// WITH_RUNTIME
 
 fun box(): String {
     val a = listOf(1u, 2u, 3u)

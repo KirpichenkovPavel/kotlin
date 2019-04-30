@@ -34,6 +34,7 @@ import org.jetbrains.kotlin.resolve.descriptorUtil.getSuperClassNotAny
 import org.jetbrains.kotlin.resolve.jvm.AsmTypes.*
 import org.jetbrains.kotlin.resolve.jvm.diagnostics.JvmDeclarationOrigin
 import org.jetbrains.kotlin.resolve.jvm.jvmSignature.JvmMethodSignature
+import org.jetbrains.kotlin.resolve.jvm.shouldHideConstructorDueToInlineClassTypeValueParameters
 import org.jetbrains.kotlin.types.*
 import org.jetbrains.kotlin.types.typeUtil.builtIns
 import org.jetbrains.kotlin.util.OperatorNameConventions
@@ -91,7 +92,9 @@ class PropertyReferenceCodegen(
         v.defineClass(
             element,
             state.classFileVersion,
-            ACC_FINAL or ACC_SUPER or AsmUtil.getVisibilityAccessFlagForClass(classDescriptor),
+            ACC_FINAL or ACC_SUPER or
+                    AsmUtil.getVisibilityAccessFlagForClass(classDescriptor) or
+                    AsmUtil.getSyntheticAccessFlagForLambdaClass(classDescriptor),
             asmType.internalName,
             null,
             superAsmType.internalName,
@@ -241,6 +244,11 @@ class PropertyReferenceCodegen(
             }
 
             val accessor = when (callable) {
+                is ClassConstructorDescriptor ->
+                    if (shouldHideConstructorDueToInlineClassTypeValueParameters(callable))
+                        AccessorForConstructorDescriptor(callable, callable.containingDeclaration, null, AccessorKind.NORMAL)
+                    else
+                        callable
                 is FunctionDescriptor -> callable
                 is VariableDescriptorWithAccessors ->
                     callable.getter ?: DescriptorFactory.createDefaultGetter(callable as PropertyDescriptor, Annotations.EMPTY).apply {
@@ -250,7 +258,7 @@ class PropertyReferenceCodegen(
             }
             val declaration = DescriptorUtils.unwrapFakeOverride(accessor).original
             val method =
-                if (callable.containingDeclaration.isInlineClass())
+                if (callable.containingDeclaration.isInlineClass() && !declaration.isGetterOfUnderlyingPropertyOfInlineClass())
                     state.typeMapper.mapSignatureForInlineErasedClassSkipGeneric(declaration).asmMethod
                 else
                     state.typeMapper.mapAsmMethod(declaration)
