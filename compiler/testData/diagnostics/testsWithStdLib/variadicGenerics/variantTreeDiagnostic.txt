@@ -1,0 +1,40 @@
+package
+
+public fun box(): kotlin.String
+public fun collectValues(/*0*/ tree: @kotlin.experimental.TypeArguments(types = {Node::class, Leaf::class}) Variant<kotlin.Any?>): kotlin.String
+
+public final data class Leaf {
+    public constructor Leaf(/*0*/ data: kotlin.String)
+    public final val data: kotlin.String
+    public final operator /*synthesized*/ fun component1(): kotlin.String
+    public final /*synthesized*/ fun copy(/*0*/ data: kotlin.String = ...): Leaf
+    public open override /*1*/ /*synthesized*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public open override /*1*/ /*synthesized*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*synthesized*/ fun toString(): kotlin.String
+}
+
+public final data class Node {
+    public constructor Node(/*0*/ left: @kotlin.experimental.TypeArguments(types = {Node::class, Leaf::class}) Variant<kotlin.Any?>, /*1*/ right: @kotlin.experimental.TypeArguments(types = {Node::class, Leaf::class}) Variant<kotlin.Any?>, /*2*/ data: kotlin.String)
+    public final val data: kotlin.String
+    public final val left: @kotlin.experimental.TypeArguments(types = {Node::class, Leaf::class}) Variant<kotlin.Any?>
+    public final val right: @kotlin.experimental.TypeArguments(types = {Node::class, Leaf::class}) Variant<kotlin.Any?>
+    public final operator /*synthesized*/ fun component1(): @kotlin.experimental.TypeArguments(types = {Node::class, Leaf::class}) Variant<kotlin.Any?>
+    public final operator /*synthesized*/ fun component2(): @kotlin.experimental.TypeArguments(types = {Node::class, Leaf::class}) Variant<kotlin.Any?>
+    public final operator /*synthesized*/ fun component3(): kotlin.String
+    public final /*synthesized*/ fun copy(/*0*/ left: @kotlin.experimental.TypeArguments(types = {Node::class, Leaf::class}) Variant<kotlin.Any?> = ..., /*1*/ right: @kotlin.experimental.TypeArguments(types = {Node::class, Leaf::class}) Variant<kotlin.Any?> = ..., /*2*/ data: kotlin.String = ...): Node
+    public open override /*1*/ /*synthesized*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public open override /*1*/ /*synthesized*/ fun hashCode(): kotlin.Int
+    public open override /*1*/ /*synthesized*/ fun toString(): kotlin.String
+}
+
+public final class Variant</*0*/ Ts> {
+    public constructor Variant</*0*/ Ts>()
+    private final var index: kotlin.Int
+    private final var value: kotlin.Any?
+    public open override /*1*/ /*fake_override*/ fun equals(/*0*/ other: kotlin.Any?): kotlin.Boolean
+    public final operator fun </*0*/ T> get(/*0*/ ix: @kotlin.experimental.TypeIndex(targetType = T::class, variadicParameter = Ts...::class) kotlin.Int): T?
+    public open override /*1*/ /*fake_override*/ fun hashCode(): kotlin.Int
+    public final fun </*0*/ T, /*1*/ R> let(/*0*/ ix: @kotlin.experimental.TypeIndex(targetType = T::class, variadicParameter = Ts...::class) kotlin.Int, /*1*/ block: (T) -> R): R?
+    public final operator fun </*0*/ T> set(/*0*/ ix: @kotlin.experimental.TypeIndex(targetType = T::class, variadicParameter = Ts...::class) kotlin.Int, /*1*/ value: T): kotlin.Unit
+    public open override /*1*/ /*fake_override*/ fun toString(): kotlin.String
+}

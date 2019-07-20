@@ -24843,6 +24843,29 @@ public class IrBlackBoxCodegenTestGenerated extends AbstractIrBlackBoxCodegenTes
         }
     }
 
+    @TestMetadata("compiler/testData/codegen/box/variadicGenerics")
+    @TestDataPath("$PROJECT_ROOT")
+    @RunWith(JUnit3RunnerWithInners.class)
+    public static class VariadicGenerics extends AbstractIrBlackBoxCodegenTest {
+        private void runTest(String testDataFilePath) throws Exception {
+            KotlinTestUtils.runTest(this::doTest, TargetBackend.JVM_IR, testDataFilePath);
+        }
+
+        public void testAllFilesPresentInVariadicGenerics() throws Exception {
+            KotlinTestUtils.assertAllTestsPresentByMetadata(this.getClass(), new File("compiler/testData/codegen/box/variadicGenerics"), Pattern.compile("^(.+)\\.kt$"), TargetBackend.JVM_IR, true);
+        }
+
+        @TestMetadata("helloWorld.kt")
+        public void testHelloWorld() throws Exception {
+            runTest("compiler/testData/codegen/box/variadicGenerics/helloWorld.kt");
+        }
+
+        @TestMetadata("tree.kt")
+        public void testTree() throws Exception {
+            runTest("compiler/testData/codegen/box/variadicGenerics/tree.kt");
+        }
+    }
+
     @TestMetadata("compiler/testData/codegen/box/when")
     @TestDataPath("$PROJECT_ROOT")
     @RunWith(JUnit3RunnerWithInners.class)

@@ -3518,6 +3518,11 @@ public class DiagnosticsTestWithStdLibGenerated extends AbstractDiagnosticsTestW
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/starProjection.kt");
         }
 
+        @TestMetadata("tupleMap.kt")
+        public void testTupleMap() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/tupleMap.kt");
+        }
+
         @TestMetadata("tupleSum.kt")
         public void testTupleSum() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/tupleSum.kt");
@@ -3568,9 +3573,24 @@ public class DiagnosticsTestWithStdLibGenerated extends AbstractDiagnosticsTestW
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variadicReceiverAsTopLevelConstant.kt");
         }
 
+        @TestMetadata("variance.kt")
+        public void testVariance() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variance.kt");
+        }
+
         @TestMetadata("variantBase.kt")
         public void testVariantBase() throws Exception {
             runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variantBase.kt");
+        }
+
+        @TestMetadata("variantTree.kt")
+        public void testVariantTree() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variantTree.kt");
+        }
+
+        @TestMetadata("variantTreeDiagnostic.kt")
+        public void testVariantTreeDiagnostic() throws Exception {
+            runTest("compiler/testData/diagnostics/testsWithStdLib/variadicGenerics/variantTreeDiagnostic.kt");
         }
     }
 

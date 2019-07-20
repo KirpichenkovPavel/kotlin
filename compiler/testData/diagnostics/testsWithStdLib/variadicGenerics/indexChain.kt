@@ -16,4 +16,3 @@ fun test() {
     val v2 = tuple.get2(1)
     val v3 = tuple.get3(1)
 }
-
